@@ -1,0 +1,20 @@
+# Syntax Coloring Map For DecentIoT
+
+# Classes (KEYWORD1)
+DecentIoT	KEYWORD1
+DecentIoTClass	KEYWORD1
+DecentIoTConfig	KEYWORD1
+
+# Methods and Functions (KEYWORD2)
+begin	KEYWORD2
+run	KEYWORD2
+write	KEYWORD2
+read	KEYWORD2
+onPath	KEYWORD2
+createObject	KEYWORD2
+isConnected	KEYWORD2
+getLastError	KEYWORD2
+
+# Constants (LITERAL1)
+FIREBASE_PATH	LITERAL1
+FIREBASE_WRITE	LITERAL1 
