@@ -8,7 +8,7 @@
 #include <functional>
 #include <map>
 #include <queue>
-#include <Firebase_ESP_Client.h>
+#include <FirebaseClient.h>
 
 // Callback types
 // Universal callback that can handle any type
@@ -104,14 +104,13 @@ private:
     unsigned long _lastStatusRetry = 0;
     const unsigned long _statusRetryInterval = 15000; // 5 seconds retry interval
     bool _statusUpdatePending = true; // Force immediate status update
-    FirebaseConfig _config;
-    FirebaseAuth _auth;
-    FirebaseData _fbdo;
-    FirebaseData _pollFbdo;
+    FirebaseApp _app;
+    AsyncClient _async_client;
+    UserAuth _auth;
     void processScheduledTasks();
     bool isNumericOrBoolean(const char *s);
-    void handleFirebaseStream(FirebaseStream data);
-    static void handleFirebaseStreamStatic(FirebaseStream data);
+    void handleFirebaseStream(AsyncResult &aResult);
+    static void handleFirebaseStreamStatic(AsyncResult &aResult);
     static DecentIoTClass *_instance;
     static void setInstance(DecentIoTClass *instance);
     //void dispatchReceiveHandler(const char *id, JsonVariant value);
@@ -121,7 +120,6 @@ private:
     void dispatchReceiveHandler(const char *id, const char *value);
     void cancel(String taskId);
     void debugPrintScheduledTasks();
-    void pollAllReceivePinsOnce();
     void updateDeviceStatus();
 
 public:
@@ -130,7 +128,6 @@ public:
     bool isConnected() { return _isConnected; }
     void onReceive(const char *pin, ReceiveCallback callback);
     void onSend(const char *pin, SendCallback callback);
-    void run();
     void cancelSend(const char *pin);
     void write(const char *pin, bool value);
     void write(const char *pin, int value);

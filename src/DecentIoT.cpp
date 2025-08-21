@@ -1,7 +1,5 @@
 #include "DecentIoT.h"
-#include <Firebase_ESP_Client.h>
-#include <addons/TokenHelper.h>
-#include <addons/RTDBHelper.h>
+#include <FirebaseClient.h>
 #include <time.h>
 
 // Global instance
@@ -11,18 +9,17 @@ DecentIoTClass &getDecentIoT() { return DecentIoT; }
 // Static instance pointer for callback
 DecentIoTClass *DecentIoTClass::_instance = nullptr;
 void DecentIoTClass::setInstance(DecentIoTClass *instance) { _instance = instance; }
-void DecentIoTClass::handleFirebaseStreamStatic(FirebaseStream data)
+void DecentIoTClass::handleFirebaseStreamStatic(AsyncResult &aResult)
 {
     if (_instance)
-        _instance->handleFirebaseStream(data);
+        _instance->handleFirebaseStream(aResult);
 }
 
 DecentIoTClass::DecentIoTClass()
     : _firebaseUrl(nullptr), _firebaseAuth(nullptr), _projectId(nullptr),
       _userId(nullptr), _deviceId(nullptr), _authEmail(nullptr), _authPass(nullptr),
       _isConnected(false),
-      _lastRequestTime(0), _requestInterval(50),
-      _config(), _auth()
+      _lastRequestTime(0), _requestInterval(50)
 {
 }
 
@@ -38,80 +35,51 @@ bool DecentIoTClass::begin(const char *firebaseUrl, const char *firebaseAuth,
     _authEmail = authEmail;
     _authPass = authPass;
 
-    // Set up Firebase config and auth
-    _config.api_key = _firebaseAuth;
-    _config.database_url = _firebaseUrl;
+    // Assign user credentials
     _auth.user.email = _authEmail;
     _auth.user.password = _authPass;
 
-    Firebase.begin(&_config, &_auth);
-    Firebase.reconnectWiFi(true);
+    // Initialize Firebase App
+    _app.initializeApp(_async_client, _auth);
 
-    if (!Firebase.ready())
-    {
-        Serial.println("[DecentIoT] Firebase not ready!");
-        return false;
-    }
-
-    // Sync time with NTP server
-    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-    Serial.println("[DecentIoT] Waiting for NTP time sync...");
-    time_t now = 0;
-    int retry = 0;
-    while (now < 24 * 3600 && retry < 10) {
-        Serial.print(".");
-        delay(500);
-        now = time(nullptr);
-        retry++;
-    }
-    Serial.println();
-    if (now > 24 * 3600) {
-        Serial.printf("[DecentIoT] Time synced: %s", ctime(&now));
-    } else {
-        Serial.println("[DecentIoT] Failed to sync time");
-    }
+    // Set the Firebase Project ID and Database URL
+    _app.getApp<AsyncClient>()
+        ->setProjectID(_projectId)
+        .setDatabaseUrl(_firebaseUrl);
 
     setInstance(this);
 
+    // Get the Realtime Database object
+    RealtimeDatabase rtdb = _app.getDatabase();
+
+    // Set up the stream
     String streamPath = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId;
-    Firebase.RTDB.setStreamCallback(
-        &_fbdo,
-        handleFirebaseStreamStatic,
-        [](bool timeout)
-        {
-            if (timeout)
-                Serial.println("[DecentIoT] Stream timeout, resuming...");
-        });
-    if (!Firebase.RTDB.beginStream(&_fbdo, streamPath.c_str()))
-    {
+    rtdb.stream(streamPath.c_str(), handleFirebaseStreamStatic, AsyncClient::Priority::HIGH, "", "");
+
+    // Wait for authentication to complete
+    unsigned long start = millis();
+    while (!_app.getAuth()->tokenReady() && millis() - start < 10000) {
+        Serial.print(".");
+        delay(500);
+    }
+
+    if (!_app.getAuth()->tokenReady()) {
+        Serial.println("[DecentIoT] Firebase authentication failed!");
         return false;
     }
 
     _isConnected = true;
-    
+
     // Force immediate status update
     _statusUpdatePending = true;
     _lastStatusUpdate = 0;
     _lastStatusRetry = 0;
-    
+
     Serial.println("DecentIoT Initialized Successfully!");
     return true;
 }
 
 
-void DecentIoTClass::run()
-{
-    if (!_isConnected)
-    {
-        return;
-    }
-    
-    // Always process status updates first
-    updateDeviceStatus();
-    
-    // Then process scheduled tasks
-    processScheduledTasks();
-}
 
 void DecentIoTClass::processScheduledTasks()
 {
@@ -134,54 +102,44 @@ void DecentIoTClass::processScheduledTasks()
 void DecentIoTClass::write(const char *pin, bool value)
 {
     String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
-    if (Firebase.RTDB.setBool(&_fbdo, path.c_str(), value))
-    {
-        pollAllReceivePinsOnce();
-        return;
-    }
+    RealtimeDatabase rtdb = _app.getDatabase();
+    rtdb.set(path.c_str(), value);
 }
 
 void DecentIoTClass::write(const char *pin, int value)
 {
     String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
-    if (Firebase.RTDB.setInt(&_fbdo, path.c_str(), value))
-    {
-        pollAllReceivePinsOnce();
-        return;
-    }
+    RealtimeDatabase rtdb = _app.getDatabase();
+    rtdb.set(path.c_str(), value);
 }
 
 void DecentIoTClass::write(const char *pin, float value)
 {
     String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
-    if (Firebase.RTDB.setFloat(&_fbdo, path.c_str(), value))
-    {
-        pollAllReceivePinsOnce();
-        return;
-    }
+    RealtimeDatabase rtdb = _app.getDatabase();
+    rtdb.set(path.c_str(), value);
 }
 
 void DecentIoTClass::write(const char *pin, const char *value)
 {
     String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
-    if (Firebase.RTDB.setString(&_fbdo, path.c_str(), value))
-    {
-        pollAllReceivePinsOnce();
-        return;
-    }
+    RealtimeDatabase rtdb = _app.getDatabase();
+    rtdb.set(path.c_str(), value);
 }
 
 // analog classes
 void DecentIoTClass::writeAnalog(const char *pin, int value)
 {
     String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
-    if (Firebase.RTDB.setInt(&_fbdo, path.c_str(), value))
+    RealtimeDatabase rtdb = _app.getDatabase();
+    if (rtdb.set(path.c_str(), value))
     {
         Serial.printf("[ANALOG] %s set to %d\n", pin, value);
-        pollAllReceivePinsOnce();
-        return;
     }
-    Serial.printf("[ANALOG] Failed to set %s to %d\n", pin, value);
+    else
+    {
+        Serial.printf("[ANALOG] Failed to set %s to %d\n", pin, value);
+    }
 }
 
 void DecentIoTClass::writePWM(const char *pin, int value)
@@ -191,13 +149,15 @@ void DecentIoTClass::writePWM(const char *pin, int value)
     if (value > 255) value = 255;
     
     String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
-    if (Firebase.RTDB.setInt(&_fbdo, path.c_str(), value))
+    RealtimeDatabase rtdb = _app.getDatabase();
+    if (rtdb.set(path.c_str(), value))
     {
         Serial.printf("[PWM] %s set to %d (0-255)\n", pin, value);
-        pollAllReceivePinsOnce();
-        return;
     }
-    Serial.printf("[PWM] Failed to set %s to %d\n", pin, value);
+    else
+    {
+        Serial.printf("[PWM] Failed to set %s to %d\n", pin, value);
+    }
 }
 
 void DecentIoTClass::writePercent(const char *pin, float value)
@@ -207,13 +167,15 @@ void DecentIoTClass::writePercent(const char *pin, float value)
     if (value > 100.0) value = 100.0;
     
     String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
-    if (Firebase.RTDB.setFloat(&_fbdo, path.c_str(), value))
+    RealtimeDatabase rtdb = _app.getDatabase();
+    if (rtdb.set(path.c_str(), value))
     {
         Serial.printf("[PERCENT] %s set to %.1f%%\n", pin, value);
-        pollAllReceivePinsOnce();
-        return;
     }
-    Serial.printf("[PERCENT] Failed to set %s to %.1f%%\n", pin, value);
+    else
+    {
+        Serial.printf("[PERCENT] Failed to set %s to %.1f%%\n", pin, value);
+    }
 }
 
 void DecentIoTClass::writeRange(const char *pin, int value, int min, int max)
@@ -222,13 +184,15 @@ void DecentIoTClass::writeRange(const char *pin, int value, int min, int max)
     int mappedValue = map(value, min, max, 0, 255);
     
     String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
-    if (Firebase.RTDB.setInt(&_fbdo, path.c_str(), mappedValue))
+    RealtimeDatabase rtdb = _app.getDatabase();
+    if (rtdb.set(path.c_str(), mappedValue))
     {
         Serial.printf("[RANGE] %s mapped from %d (%d-%d) to %d (0-255)\n", pin, value, min, max, mappedValue);
-        pollAllReceivePinsOnce();
-        return;
     }
-    Serial.printf("[RANGE] Failed to set %s\n", pin);
+    else
+    {
+        Serial.printf("[RANGE] Failed to set %s\n", pin);
+    }
 }
 
 void DecentIoTClass::schedule(uint32_t interval, TaskCallback callback)
@@ -262,24 +226,6 @@ void DecentIoTClass::onReceive(const char *pin, ReceiveCallback callback)
 {
     // Store the callback for this pin
     _receiveHandlers.push_back({pin, callback});
-    
-    // Set up Firebase stream for this pin
-    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
-    
-    if (Firebase.RTDB.beginStream(&_fbdo, path.c_str()))
-    {
-        Serial.printf("[RECEIVE] Stream started for %s\n", pin);
-        
-        // Set the stream callback with proper Firebase types
-        Firebase.RTDB.setStreamCallback(&_fbdo, handleFirebaseStreamStatic, [](bool timeout) {
-            if (timeout)
-                Serial.println("[RECEIVE] Stream timeout, resuming...");
-        });
-    }
-    else
-    {
-        Serial.printf("[RECEIVE] Failed to start stream for %s\n", pin);
-    }
 }
 
 void DecentIoTClass::cancelSend(const char *pin)
@@ -287,47 +233,42 @@ void DecentIoTClass::cancelSend(const char *pin)
     // No queue/request system; nothing to cancel. If needed, remove scheduled send tasks here.
 }
 
-void DecentIoTClass::handleFirebaseStream(FirebaseStream data)
+void DecentIoTClass::handleFirebaseStream(AsyncResult &aResult)
 {
-    String path = data.dataPath();
-    // Expecting path like "/P0", "/P1", etc. with direct values
-    if (path.startsWith("/P"))
+    if (aResult.isEvent())
     {
-        // Remove leading slash to get the pin name
-        String pin = path.substring(1);
-        
-        //Serial.printf("[STREAM] Received data for pin %s, type: %s\n", pin.c_str(), data.dataType().c_str());
-        
-        // Handle different data types directly
-        if (data.dataType() == "boolean")
+        if (aResult.getEvent().getEventType() == "put")
         {
-            bool val = data.boolData();
-            //Serial.printf("[STREAM] %s boolean value: %s\n", pin.c_str(), val ? "true" : "false");
-            this->dispatchReceiveHandler(pin.c_str(), val);
+            String path = aResult.getEvent().getDataPath();
+            if (path.startsWith("/"))
+            {
+                String pin = path.substring(1);
+                if (pin.startsWith("P"))
+                {
+                    Data d = aResult.getEvent().getData();
+                    if (d.isBool())
+                    {
+                        this->dispatchReceiveHandler(pin.c_str(), d.to<bool>());
+                    }
+                    else if (d.isInt())
+                    {
+                        this->dispatchReceiveHandler(pin.c_str(), d.to<int>());
+                    }
+                    else if (d.isFloat())
+                    {
+                        this->dispatchReceiveHandler(pin.c_str(), d.to<float>());
+                    }
+                    else if (d.isString())
+                    {
+                        this->dispatchReceiveHandler(pin.c_str(), d.to<const char *>());
+                    }
+                }
+            }
         }
-        else if (data.dataType() == "int")
-        {
-            int val = data.intData();
-            //Serial.printf("[STREAM] %s int value: %d\n", pin.c_str(), val);
-            this->dispatchReceiveHandler(pin.c_str(), val);
-        }
-        else if (data.dataType() == "float")
-        {
-            float val = data.floatData();
-            //Serial.printf("[STREAM] %s float value: %f\n", pin.c_str(), val);
-            this->dispatchReceiveHandler(pin.c_str(), val);
-        }
-        else if (data.dataType() == "string")
-        {
-            String val = data.stringData();
-            //Serial.printf("[STREAM] %s string value: %s\n", pin.c_str(), val.c_str());
-            this->dispatchReceiveHandler(pin.c_str(), val.c_str());
-        }
-        else
-        {
-            Serial.printf("[DEBUG] Unsupported data type %s for pin %s\n", data.dataType().c_str(), pin.c_str());
-        }
-        return;
+    }
+    else if (aResult.isError())
+    {
+        Serial.printf("[STREAM] Error: %s\n", aResult.getError().message().c_str());
     }
 }
 
@@ -431,97 +372,38 @@ void DecentIoTClass::debugPrintScheduledTasks()
     }
 }
 
-void DecentIoTClass::pollAllReceivePinsOnce()
-{
-    for (const auto &handler : _receiveHandlers)
-    {
-        String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + handler.id;
-        
-        // Simple, predictable order - no assumptions about pin names
-        // Let the user's code handle the type conversion, not the library
-        if (Firebase.RTDB.getInt(&_pollFbdo, path.c_str())) {
-            int val = _pollFbdo.intData();
-            DecentIoTValue v;
-            v.type = DecentIoTValue::INT;
-            v.intValue = val;
-            handler.callback(v);
-        }
-        else if (Firebase.RTDB.getBool(&_pollFbdo, path.c_str())) {
-            bool val = _pollFbdo.boolData();
-            DecentIoTValue v;
-            v.type = DecentIoTValue::BOOL;
-            v.boolValue = val;
-            handler.callback(v);
-        }
-        else if (Firebase.RTDB.getString(&_pollFbdo, path.c_str()))
-        {
-            String val = _pollFbdo.stringData();
-            DecentIoTValue v;
-            v.type = DecentIoTValue::STRING;
-            v.stringValue = val;
-            handler.callback(v);
-        }
-        else if (Firebase.RTDB.getFloat(&_pollFbdo, path.c_str()))
-        {
-            float val = _pollFbdo.floatData();
-            DecentIoTValue v;
-            v.type = DecentIoTValue::FLOAT;
-            v.floatValue = val;
-            handler.callback(v);
-        }
-        else
-        {
-            Serial.printf("[POLL] Failed to read %s from Firebase.\n", handler.id.c_str());
-        }
-    }
-}
 
 void DecentIoTClass::updateDeviceStatus()
 {
     unsigned long currentMillis = millis();
 
-    // If a status update is pending (e.g., after a failure or on startup)
-    if (_statusUpdatePending) {
-        // Only retry if enough time has passed since last retry
-        if (currentMillis - _lastStatusRetry >= _statusRetryInterval) {
-            String statusPath = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/status";
-            FirebaseJson json;
-            json.set("s", 1); // 1 = online, 0 = offline
-            time_t unixTimestamp = time(nullptr);
-            json.set("t", (unsigned long)unixTimestamp);
-
-            if (Firebase.RTDB.setJSON(&_fbdo, statusPath.c_str(), &json)) {
-                Serial.printf("[STATUS] Device status updated successfully: s=1, t=%lu (%s)\n",
-                              (unsigned long)unixTimestamp, ctime(&unixTimestamp));
-                _lastStatusUpdate = currentMillis;
-                _statusUpdatePending = false;
-            } else {
-                Serial.printf("[STATUS] Failed to update device status. Error: %s\n", _fbdo.errorReason().c_str());
-                _lastStatusRetry = currentMillis;
-                _statusUpdatePending = true;
-            }
-            pollAllReceivePinsOnce();
-        }
-    }
-    // If not pending, check if it's time for a regular update
-    else if (currentMillis - _lastStatusUpdate >= _statusUpdateInterval) {
+    auto sendStatusUpdate = [this](unsigned long currentMillis) {
         String statusPath = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/status";
-        FirebaseJson json;
-        json.set("s", 1); // 1 = online, 0 = offline
+        RealtimeDatabase rtdb = _app.getDatabase();
+        
+        Data status_data;
         time_t unixTimestamp = time(nullptr);
-        json.set("t", (unsigned long)unixTimestamp);
+        status_data.set("s", 1);
+        status_data.set("t", (unsigned long)unixTimestamp);
 
-        if (Firebase.RTDB.setJSON(&_fbdo, statusPath.c_str(), &json)) {
+        if (rtdb.set(statusPath.c_str(), status_data)) {
             Serial.printf("[STATUS] Device status updated successfully: s=1, t=%lu (%s)\n",
                           (unsigned long)unixTimestamp, ctime(&unixTimestamp));
             _lastStatusUpdate = currentMillis;
             _statusUpdatePending = false;
         } else {
-            Serial.printf("[STATUS] Failed to update device status. Error: %s\n", _fbdo.errorReason().c_str());
+            Serial.printf("[STATUS] Failed to update device status.\n");
             _lastStatusRetry = currentMillis;
             _statusUpdatePending = true;
         }
-        pollAllReceivePinsOnce();
+    };
+
+    if (_statusUpdatePending) {
+        if (currentMillis - _lastStatusRetry >= _statusRetryInterval) {
+            sendStatusUpdate(currentMillis);
+        }
+    } else if (currentMillis - _lastStatusUpdate >= _statusUpdateInterval) {
+        sendStatusUpdate(currentMillis);
     }
 }
 
