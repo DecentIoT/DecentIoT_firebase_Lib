@@ -8,6 +8,11 @@
 #include <functional>
 #include <map>
 #include <queue>
+
+// Define required build options for FirebaseClient
+#define ENABLE_USER_AUTH
+#define ENABLE_DATABASE
+
 #include <FirebaseClient.h>
 
 // Callback types
@@ -104,46 +109,62 @@ private:
     unsigned long _lastStatusRetry = 0;
     const unsigned long _statusRetryInterval = 15000; // 5 seconds retry interval
     bool _statusUpdatePending = true; // Force immediate status update
+    
+    // Firebase objects - using correct FirebaseClient API
     FirebaseApp _app;
-    AsyncClient _async_client;
-    UserAuth _auth;
+    WiFiClientSecure _ssl_client;
+    AsyncClientClass _async_client;
+    UserAuth _user_auth;
+    RealtimeDatabase _database;
+    AsyncResult _dbResult;
+    
+    // Static instance for callbacks
+    static DecentIoTClass* _instance;
+    
+    // Helper methods
+    void updateDeviceStatus();
     void processScheduledTasks();
-    bool isNumericOrBoolean(const char *s);
     void handleFirebaseStream(AsyncResult &aResult);
     static void handleFirebaseStreamStatic(AsyncResult &aResult);
-    static DecentIoTClass *_instance;
     static void setInstance(DecentIoTClass *instance);
-    //void dispatchReceiveHandler(const char *id, JsonVariant value);
+    static void processDataStatic(AsyncResult &aResult);
+    void processData(AsyncResult &aResult);
+    
+    // Helper methods for dispatching handlers
     void dispatchReceiveHandler(const char *id, bool value);
     void dispatchReceiveHandler(const char *id, int value);
     void dispatchReceiveHandler(const char *id, float value);
     void dispatchReceiveHandler(const char *id, const char *value);
-    void cancel(String taskId);
-    void debugPrintScheduledTasks();
-    void updateDeviceStatus();
 
 public:
     DecentIoTClass();
-    bool begin(const char *firebaseUrl, const char *firebaseAuth, const char *projectId, const char *userId, const char *deviceId, const char *authEmail, const char *authPass);
-    bool isConnected() { return _isConnected; }
-    void onReceive(const char *pin, ReceiveCallback callback);
-    void onSend(const char *pin, SendCallback callback);
-    void cancelSend(const char *pin);
+    
+    // Initialize Firebase connection
+    bool begin(const char *firebaseUrl, const char *firebaseAuth,
+               const char *projectId, const char *userId, const char *deviceId,
+               const char *authEmail, const char *authPass);
+    
+    // Main loop function
+    void run();
+    
+    // Write data to Firebase
     void write(const char *pin, bool value);
     void write(const char *pin, int value);
     void write(const char *pin, float value);
     void write(const char *pin, const char *value);
-    //newly analog control functions
-    void writeAnalog(const char *pin, int value);        // 0-255 range for PWM
-    void writePWM(const char *pin, int value);           // PWM control (0-255)
-    void writePercent(const char *pin, float value);     // 0-100% range
-    void writeRange(const char *pin, int value, int min, int max); // Custom range mapping
-
-    void schedule(uint32_t interval, TaskCallback callback);
-    void schedule(String taskId, uint32_t interval, TaskCallback callback);
-    void scheduleOnce(uint32_t delay, TaskCallback callback);
+    
+    // Register callbacks
+    void onReceive(const char *pin, ReceiveCallback callback);
+    void onSend(const char *pin, SendCallback callback);
+    
+    // Schedule tasks
+    void scheduleTask(const char *id, unsigned long interval, TaskCallback callback);
+    
+    // Check connection status
+    bool isConnected() const { return _isConnected; }
 };
 
+// Global instance
 extern DecentIoTClass DecentIoT;
 DecentIoTClass &getDecentIoT();
 
@@ -167,7 +188,7 @@ public:
         {
             // If interval is provided, create a scheduled task
             String taskId = String("send_") + pin;
-            getDecentIoT().schedule(taskId, interval, cb);
+            getDecentIoT().scheduleTask(taskId.c_str(), interval, cb);
         }
         else
         {

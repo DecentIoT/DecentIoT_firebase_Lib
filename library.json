@@ -1,0 +1,10 @@
+{
+    "name": "DecentIoT",
+    "version": "1.0.0",
+    "description": "A simple IoT library for Firebase.",
+    "dependencies": {
+        "mobizt/FirebaseClient": "*"
+    },
+    "frameworks": "arduino",
+    "platforms": "espressif8266"
+}
