@@ -14,7 +14,7 @@
 #define ENABLE_DATABASE
 #define FIREBASE_DISABLE_LARGE_STRING_REALLOC_DEBUG // Suppress verbose logs
 #include <FirebaseClient.h>
-#include <FirebaseJson.h>
+
 
 // Callback types
 // Universal callback that can handle any type

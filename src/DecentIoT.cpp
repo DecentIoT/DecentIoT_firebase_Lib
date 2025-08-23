@@ -351,23 +351,18 @@ void DecentIoTClass::updateDeviceStatus()
         {
             String statusPath = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/status";
 
-            // Create status data exactly like OpenIoT (using s for status and t for timestamp)
-            // Use FirebaseJson for proper formatting like in OpenIoT
-            FirebaseJson json;
-            json.set("s", 1); // 1 = online, 0 = offline
-            time_t unixTimestamp = time(nullptr);
-            json.set("t", (unsigned long)unixTimestamp);
+            // Create status data similar to OpenIoT (using s for status and t for timestamp)
+            _database.set(_async_client, statusPath + "/s", 1, _dbResult); // 1 = online
+            _database.set(_async_client, statusPath + "/t", (int)(time(nullptr)), _dbResult);
 
-            if (_database.set(_async_client, statusPath, json, _dbResult))
+            if (!_dbResult.isError())
             {
-                Serial.printf("[STATUS] Device status updated successfully: s=1, t=%lu (%s)\n",
-                              (unsigned long)unixTimestamp, ctime(&unixTimestamp));
                 _lastStatusUpdate = currentMillis;
                 _statusUpdatePending = false;
             }
             else
             {
-                Serial.printf("[STATUS] Failed to update device status. Error: %s\n", _dbResult.error().message().c_str());
+                Serial.printf("[STATUS] Update failed: %s\n", _dbResult.error().message().c_str());
                 _lastStatusRetry = currentMillis;
                 _statusUpdatePending = true;
             }
