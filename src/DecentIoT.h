@@ -103,11 +103,13 @@ private:
     const unsigned long _statusRetryInterval = 15000; // 15 seconds
     bool _statusUpdatePending = true;
     
-    // Firebase objects - single instance approach
+    // Firebase objects - separate clients for regular and stream operations
     FirebaseApp _app;
     WiFiClientSecure _ssl_client;
+    WiFiClientSecure _stream_ssl_client;
     AsyncClientClass _async_client;
-    UserAuth _user_auth;
+    AsyncClientClass _stream_async_client;
+    UserAuth* _user_auth = nullptr;
     RealtimeDatabase _database;
     AsyncResult _result;
     
@@ -150,6 +152,7 @@ public:
     // Status
     bool isConnected() const { return _isConnected; }
     bool isStreamActive() const { return _isConnected; } // Stream is active when connected. can be removed later
+    ~DecentIoTClass();
 };
 
 // Global instance

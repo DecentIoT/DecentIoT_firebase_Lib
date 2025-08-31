@@ -1,5 +1,24 @@
 #include "DecentIoT.h"
 #include <time.h>
+#include <FirebaseClient.h>
+
+// Forward declare your global app pointer for use in the callback
+FirebaseApp* g_app_ptr = nullptr;
+
+// Free function for streaming callback
+void DecentIoTStreamCallback(AsyncResult& aResult) {
+    if (g_app_ptr) g_app_ptr->loop(); // CRITICAL: process async tasks
+    Serial.println("[STREAM] DecentIoTStreamCallback called!");
+    if (aResult.isEvent()) {
+        Serial.println("[STREAM] Stream event received!");
+        // You can call your instance handler here if needed
+        // For example, if you have a global DecentIoTClass* g_instance;
+        // g_instance->processData(aResult);
+    }
+    if (aResult.isError()) {
+        Serial.printf("[STREAM] Error: %s\n", aResult.error().message().c_str());
+    }
+}
 
 // Global instance
 DecentIoTClass DecentIoT;
@@ -10,8 +29,18 @@ DecentIoTClass* DecentIoTClass::_instance = nullptr;
 
 // Static callback function for Firebase
 void DecentIoTClass::processDataStatic(AsyncResult& aResult) {
-    if (_instance)
+    Serial.println("[DEBUG] processDataStatic CALLED!");
+    Serial.printf("[DEBUG] isEvent: %s, isError: %s, isResult: %s\n", 
+                  aResult.isEvent() ? "YES" : "NO",
+                  aResult.isError() ? "YES" : "NO", 
+                  aResult.isResult() ? "YES" : "NO");
+    
+    if (_instance) {
+        Serial.println("[DEBUG] _instance is valid, calling processData");
         _instance->processData(aResult);
+    } else {
+        Serial.println("[DEBUG] _instance is NULL!");
+    }
 }
 
 // Auth debug callback
@@ -21,11 +50,14 @@ void DecentIoTClass::authDebugPrint(AsyncResult& aResult) {
     }
 }
 
-DecentIoTClass::DecentIoTClass()
-    : _firebaseUrl(nullptr), _firebaseAuth(nullptr), _projectId(nullptr),
-      _userId(nullptr), _deviceId(nullptr), _authEmail(nullptr), _authPass(nullptr),
-      _isConnected(false), _async_client(_ssl_client), _user_auth("", "", "") {
+DecentIoTClass::~DecentIoTClass() {
+    if (_user_auth) delete _user_auth;
 }
+
+DecentIoTClass::DecentIoTClass()
+    : _ssl_client(), _stream_ssl_client(),
+      _async_client(_ssl_client), _stream_async_client(_stream_ssl_client)
+{}
 
 bool DecentIoTClass::begin(const char* firebaseUrl, const char* firebaseAuth,
                            const char* projectId, const char* userId, const char* deviceId,
@@ -38,20 +70,24 @@ bool DecentIoTClass::begin(const char* firebaseUrl, const char* firebaseAuth,
     _authEmail = authEmail;
     _authPass = authPass;
 
-    // Initialize UserAuth
-    _user_auth = UserAuth(String(_firebaseAuth), String(_authEmail), String(_authPass));
+    // Initialize UserAuth with correct arguments
+    if (_user_auth) delete _user_auth;
+    _user_auth = new UserAuth(String(_firebaseAuth), String(_authEmail), String(_authPass));
     Serial.printf("[DecentIoT] Initializing with email: %s\n", _authEmail);
 
-    // Configure SSL client for ESP8266
+    // Configure SSL clients for ESP8266 (separate for regular and stream operations)
     _ssl_client.setInsecure();
     _ssl_client.setBufferSizes(4096, 1024);
+    
+    _stream_ssl_client.setInsecure();
+    _stream_ssl_client.setBufferSizes(4096, 1024);
 
     // Set instance for callbacks
     _instance = this;
 
     // Initialize Firebase app (official pattern)
     Serial.println("[DecentIoT] Initializing Firebase app...");
-    initializeApp(_async_client, _app, getAuth(_user_auth), 120000, authDebugPrint);
+    initializeApp(_async_client, _app, getAuth(*_user_auth), 120000, authDebugPrint);
 
     // Get RealtimeDatabase from app
     _app.getApp<RealtimeDatabase>(_database);
@@ -82,36 +118,54 @@ bool DecentIoTClass::begin(const char* firebaseUrl, const char* firebaseAuth,
     }
 
     // Set up streaming (official FirebaseClient pattern)
-    String streamPath = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId;
+    String streamPath = String("/") + _projectId + "/users/" + _userId + "/datastream/" + _deviceId;
     Serial.printf("[DecentIoT] Starting stream on: %s\n", streamPath.c_str());
     Serial.printf("[DEBUG] Full stream path: %s\n", streamPath.c_str());
     
-    // Try using main async client for streaming instead of separate stream client
+    // Use the official FirebaseClient streaming pattern with SEPARATE clients
     _async_client.setClient(_ssl_client);
+    _stream_async_client.setClient(_stream_ssl_client);
     
     // Set SSE filters for event types
-    _async_client.setSSEFilters("put,patch,get,keep-alive,cancel,auth_revoked");
+    _stream_async_client.setSSEFilters("put,patch,get,keep-alive,cancel,auth_revoked");
     Serial.println("[DEBUG] SSE filters set");
     
-    // Try different streaming approach - use the app callback instead
-    _app.setCallback(processDataStatic);
+    // Set the global app pointer for use in the callback
+    g_app_ptr = &_app;
+
+    // Start the stream using the official pattern with SEPARATE stream client
+    Serial.printf("[DEBUG] About to start stream on path: %s\n", streamPath.c_str());
     
-    // Start the stream with a callback using main async client
-    _database.get(_async_client, streamPath, processDataStatic, true /* SSE mode */, "streamTask");
+    _database.get(_stream_async_client, streamPath, DecentIoTStreamCallback, true, "streamTask");
+    Serial.println("[DEBUG] Stream start command sent");
+    Serial.printf("[DEBUG] processDataStatic function address: %p\n", (void*)processDataStatic);
+    Serial.printf("[DEBUG] _instance pointer: %p\n", (void*)_instance);
+    Serial.printf("[DEBUG] Current instance pointer: %p\n", (void*)this);
+    
+    // Wait a moment for stream to establish
+    delay(1000);
+    
     Serial.println("[DecentIoT] Stream setup completed!");
     Serial.printf("[DEBUG] Stream callback registered: %s\n", processDataStatic ? "YES" : "NO");
     
     // Test the stream by writing a test value
     delay(1000); // Wait a bit for stream to establish
-    String testPath = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/test";
+    String testPath = String("/") + _projectId + "/users/" + _userId + "/datastream/" + _deviceId + "/test";
     _database.set<String>(_async_client, testPath, "stream_test", _result);
     Serial.println("[DEBUG] Test write completed - check if stream receives this event");
     
     // Test writing to P0 to see if we receive our own stream event
     delay(2000);
-    String p0Path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/P0";
+    String p0Path = String("/") + _projectId + "/users/" + _userId + "/datastream/" + _deviceId + "/P0";
     _database.set<bool>(_async_client, p0Path, true, _result);
     Serial.println("[DEBUG] Writing P0=true - check if stream receives this event");
+    
+    // Add a simple test to verify stream is working
+    delay(3000);
+    Serial.println("[DEBUG] === STREAM TEST ===");
+    Serial.println("[DEBUG] If streaming is working, you should see stream events above");
+    Serial.println("[DEBUG] If you don't see any stream events, streaming is NOT working");
+    Serial.println("[DEBUG] === END STREAM TEST ===");
 
     _isConnected = true;
     Serial.println("[DecentIoT] Initialized successfully!");
@@ -121,9 +175,16 @@ bool DecentIoTClass::begin(const char* firebaseUrl, const char* firebaseAuth,
 void DecentIoTClass::run() {
     if (!_isConnected || !_app.ready())
         return;
-
-    // Process Firebase main loop
     _app.loop();
+    
+    // Add periodic stream debugging
+    static unsigned long lastStreamDebug = 0;
+    if (millis() - lastStreamDebug > 5000) { // Every 5 seconds
+        Serial.printf("[DEBUG] Run loop - App ready: %s, Connected: %s\n", 
+                      _app.ready() ? "YES" : "NO", 
+                      _isConnected ? "YES" : "NO");
+        lastStreamDebug = millis();
+    }
 
     // Process scheduled tasks
     processScheduledTasks();
@@ -160,7 +221,7 @@ void DecentIoTClass::processScheduledTasks() {
 void DecentIoTClass::write(const char* pin, bool value) {
     if (!_app.ready()) return;
     
-    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
+    String path = String("/") + _projectId + "/users/" + _userId + "/datastream/" + _deviceId + "/" + pin;
     _database.set<bool>(_async_client, path, value, _result);
     
     if (_result.isError()) {
@@ -173,7 +234,7 @@ void DecentIoTClass::write(const char* pin, bool value) {
 void DecentIoTClass::write(const char* pin, int value) {
     if (!_app.ready()) return;
     
-    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
+    String path = String("/") + _projectId + "/users/" + _userId + "/datastream/" + _deviceId + "/" + pin;
     _database.set<int>(_async_client, path, value, _result);
     
     if (_result.isError()) {
@@ -186,7 +247,7 @@ void DecentIoTClass::write(const char* pin, int value) {
 void DecentIoTClass::write(const char* pin, float value) {
     if (!_app.ready()) return;
     
-    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
+    String path = String("/") + _projectId + "/users/" + _userId + "/datastream/" + _deviceId + "/" + pin;
     _database.set<float>(_async_client, path, value, _result);
     
     if (_result.isError()) {
@@ -199,7 +260,7 @@ void DecentIoTClass::write(const char* pin, float value) {
 void DecentIoTClass::write(const char* pin, const char* value) {
     if (!_app.ready()) return;
     
-    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
+    String path = String("/") + _projectId + "/users/" + _userId + "/datastream/" + _deviceId + "/" + pin;
     _database.set<String>(_async_client, path, String(value), _result);
     
     if (_result.isError()) {
@@ -257,7 +318,7 @@ void DecentIoTClass::updateDeviceStatus() {
 
     if (_statusUpdatePending || (currentMillis - _lastStatusUpdate >= _statusUpdateInterval)) {
         if (currentMillis - _lastStatusRetry >= _statusRetryInterval) {
-            String statusPath = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/status";
+            String statusPath = String("/") + _projectId + "/users/" + _userId + "/datastream/" + _deviceId + "/status";
 
             _database.set(_async_client, statusPath + "/s", 1, _result); // 1 = online
             _database.set(_async_client, statusPath + "/t", (int)(time(nullptr)), _result);
