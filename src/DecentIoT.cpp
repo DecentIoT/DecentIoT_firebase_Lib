@@ -2,23 +2,7 @@
 #include <time.h>
 #include <FirebaseClient.h>
 
-// Forward declare your global app pointer for use in the callback
-FirebaseApp* g_app_ptr = nullptr;
 
-// Free function for streaming callback
-void DecentIoTStreamCallback(AsyncResult& aResult) {
-    if (g_app_ptr) g_app_ptr->loop(); // CRITICAL: process async tasks
-    Serial.println("[STREAM] DecentIoTStreamCallback called!");
-    if (aResult.isEvent()) {
-        Serial.println("[STREAM] Stream event received!");
-        // You can call your instance handler here if needed
-        // For example, if you have a global DecentIoTClass* g_instance;
-        // g_instance->processData(aResult);
-    }
-    if (aResult.isError()) {
-        Serial.printf("[STREAM] Error: %s\n", aResult.error().message().c_str());
-    }
-}
 
 // Global instance
 DecentIoTClass DecentIoT;
@@ -117,55 +101,16 @@ bool DecentIoTClass::begin(const char* firebaseUrl, const char* firebaseAuth,
         retry++;
     }
 
-    // Set up streaming (official FirebaseClient pattern)
-    String streamPath = String("/") + _projectId + "/users/" + _userId + "/datastream/" + _deviceId;
-    Serial.printf("[DecentIoT] Starting stream on: %s\n", streamPath.c_str());
-    Serial.printf("[DEBUG] Full stream path: %s\n", streamPath.c_str());
-    
-    // Use the official FirebaseClient streaming pattern with SEPARATE clients
+    // Set up streaming clients (individual pin streams will be set up in onReceive)
     _async_client.setClient(_ssl_client);
     _stream_async_client.setClient(_stream_ssl_client);
     
-    // Set SSE filters for event types
-    _stream_async_client.setSSEFilters("put,patch,get,keep-alive,cancel,auth_revoked");
-    Serial.println("[DEBUG] SSE filters set");
+    Serial.println("[DecentIoT] Streaming clients configured - individual pin streams will be set up when onReceive is called");
     
-    // Set the global app pointer for use in the callback
-    g_app_ptr = &_app;
 
-    // Start the stream using the official pattern with SEPARATE stream client
-    Serial.printf("[DEBUG] About to start stream on path: %s\n", streamPath.c_str());
+
+
     
-    _database.get(_stream_async_client, streamPath, DecentIoTStreamCallback, true, "streamTask");
-    Serial.println("[DEBUG] Stream start command sent");
-    Serial.printf("[DEBUG] processDataStatic function address: %p\n", (void*)processDataStatic);
-    Serial.printf("[DEBUG] _instance pointer: %p\n", (void*)_instance);
-    Serial.printf("[DEBUG] Current instance pointer: %p\n", (void*)this);
-    
-    // Wait a moment for stream to establish
-    delay(1000);
-    
-    Serial.println("[DecentIoT] Stream setup completed!");
-    Serial.printf("[DEBUG] Stream callback registered: %s\n", processDataStatic ? "YES" : "NO");
-    
-    // Test the stream by writing a test value
-    delay(1000); // Wait a bit for stream to establish
-    String testPath = String("/") + _projectId + "/users/" + _userId + "/datastream/" + _deviceId + "/test";
-    _database.set<String>(_async_client, testPath, "stream_test", _result);
-    Serial.println("[DEBUG] Test write completed - check if stream receives this event");
-    
-    // Test writing to P0 to see if we receive our own stream event
-    delay(2000);
-    String p0Path = String("/") + _projectId + "/users/" + _userId + "/datastream/" + _deviceId + "/P0";
-    _database.set<bool>(_async_client, p0Path, true, _result);
-    Serial.println("[DEBUG] Writing P0=true - check if stream receives this event");
-    
-    // Add a simple test to verify stream is working
-    delay(3000);
-    Serial.println("[DEBUG] === STREAM TEST ===");
-    Serial.println("[DEBUG] If streaming is working, you should see stream events above");
-    Serial.println("[DEBUG] If you don't see any stream events, streaming is NOT working");
-    Serial.println("[DEBUG] === END STREAM TEST ===");
 
     _isConnected = true;
     Serial.println("[DecentIoT] Initialized successfully!");
@@ -185,13 +130,15 @@ void DecentIoTClass::run() {
                       _isConnected ? "YES" : "NO");
         lastStreamDebug = millis();
     }
+    
+    // Update device status
+    updateDeviceStatus();
 
     // Process scheduled tasks
     processScheduledTasks();
-
-    // Update device status
-    //updateDeviceStatus();
     
+    // ✅ REMOVED: setupPendingStreams() - we're now manually setting up streams in onReceive()
+  
     // Periodic stream status check (every 30 seconds)
     static unsigned long lastStreamCheck = 0;
     if (millis() - lastStreamCheck > 30000) {
@@ -221,7 +168,7 @@ void DecentIoTClass::processScheduledTasks() {
 void DecentIoTClass::write(const char* pin, bool value) {
     if (!_app.ready()) return;
     
-    String path = String("/") + _projectId + "/users/" + _userId + "/datastream/" + _deviceId + "/" + pin;
+    String path = String("/") + _projectId + "/users/" + _userId + "/dataStream/" + _deviceId + "/" + pin;
     _database.set<bool>(_async_client, path, value, _result);
     
     if (_result.isError()) {
@@ -234,7 +181,7 @@ void DecentIoTClass::write(const char* pin, bool value) {
 void DecentIoTClass::write(const char* pin, int value) {
     if (!_app.ready()) return;
     
-    String path = String("/") + _projectId + "/users/" + _userId + "/datastream/" + _deviceId + "/" + pin;
+    String path = String("/") + _projectId + "/users/" + _userId + "/dataStream/" + _deviceId + "/" + pin;
     _database.set<int>(_async_client, path, value, _result);
     
     if (_result.isError()) {
@@ -247,7 +194,7 @@ void DecentIoTClass::write(const char* pin, int value) {
 void DecentIoTClass::write(const char* pin, float value) {
     if (!_app.ready()) return;
     
-    String path = String("/") + _projectId + "/users/" + _userId + "/datastream/" + _deviceId + "/" + pin;
+    String path = String("/") + _projectId + "/users/" + _userId + "/dataStream/" + _deviceId + "/" + pin;
     _database.set<float>(_async_client, path, value, _result);
     
     if (_result.isError()) {
@@ -260,7 +207,7 @@ void DecentIoTClass::write(const char* pin, float value) {
 void DecentIoTClass::write(const char* pin, const char* value) {
     if (!_app.ready()) return;
     
-    String path = String("/") + _projectId + "/users/" + _userId + "/datastream/" + _deviceId + "/" + pin;
+    String path = String("/") + _projectId + "/users/" + _userId + "/dataStream/" + _deviceId + "/" + pin;
     _database.set<String>(_async_client, path, String(value), _result);
     
     if (_result.isError()) {
@@ -277,6 +224,37 @@ void DecentIoTClass::onReceive(const char* pin, ReceiveCallback callback) {
     _receiveHandlers.push_back(handler);
     
     Serial.printf("[DecentIoT] Registered receive handler for pin: %s (total handlers: %d)\n", pin, _receiveHandlers.size());
+    
+    // ✅ ADD THIS: Individual pin stream setup
+    if (_app.ready()) {
+        String pinPath = String("/") + _projectId + "/users/" + _userId + "/dataStream/" + _deviceId + "/" + pin;
+        Serial.printf("[STREAM] Setting up stream for pin %s at path: %s\n", pin, pinPath.c_str());
+        
+        // Create individual stream client for this pin
+        WiFiClientSecure& pinSslClient = _pin_stream_clients[String(pin)];
+        AsyncClientClass& pinAsyncClient = _pin_async_clients[String(pin)];
+        
+        // Configure the pin-specific SSL client
+        pinSslClient.setInsecure();
+        pinSslClient.setBufferSizes(4096, 1024);
+        
+        // Set the client for the async client
+        pinAsyncClient.setClient(pinSslClient);
+        
+        // Set SSE filters for this stream
+        pinAsyncClient.setSSEFilters("get,put,patch,keep-alive,cancel,auth_revoked");
+        
+        // Start the stream for this specific pin using processDataStatic
+        _database.get(pinAsyncClient, pinPath, processDataStatic, true, String("stream_") + pin);
+        
+        Serial.printf("[STREAM] Stream started for pin %s\n", pin);
+        
+        // ✅ ADD THIS DEBUG: Check if stream actually started
+        delay(1000); // Wait a bit
+        Serial.printf("[DEBUG] Stream started for pin %s\n", pin);
+    } else {
+        Serial.printf("[STREAM] App not ready, will set up stream for %s later\n", pin);
+    }
     
     // Debug: print all registered handlers
     Serial.print("[DecentIoT] All registered handlers: ");
@@ -318,7 +296,7 @@ void DecentIoTClass::updateDeviceStatus() {
 
     if (_statusUpdatePending || (currentMillis - _lastStatusUpdate >= _statusUpdateInterval)) {
         if (currentMillis - _lastStatusRetry >= _statusRetryInterval) {
-            String statusPath = String("/") + _projectId + "/users/" + _userId + "/datastream/" + _deviceId + "/status";
+            String statusPath = String("/") + _projectId + "/users/" + _userId + "/dataStream/" + _deviceId + "/status";
 
             _database.set(_async_client, statusPath + "/s", 1, _result); // 1 = online
             _database.set(_async_client, statusPath + "/t", (int)(time(nullptr)), _result);
@@ -406,9 +384,10 @@ void DecentIoTClass::handleFirebaseStream(AsyncResult& aResult) {
 }
 
 void DecentIoTClass::processData(AsyncResult& aResult) {
-    Serial.printf("[DEBUG] processData called, isEvent: %s, isError: %s\n", 
+    Serial.printf("[DEBUG] processData called, isEvent: %s, isError: %s, isResult: %s\n", 
                   aResult.isEvent() ? "true" : "false", 
-                  aResult.isError() ? "true" : "false");
+                  aResult.isError() ? "true" : "false",
+                  aResult.isResult() ? "true" : "false");
     
     // Handle stream events
     if (aResult.isEvent()) {
@@ -419,7 +398,10 @@ void DecentIoTClass::processData(AsyncResult& aResult) {
         Serial.printf("[DEBUG] Event type: %s\n", rtdbResult.event().c_str());
         Serial.printf("[DEBUG] Data path: %s\n", rtdbResult.dataPath().c_str());
         Serial.printf("[DEBUG] Data: %s\n", rtdbResult.data().c_str());
+        Serial.printf("[DEBUG] Full path: %s\n", rtdbResult.dataPath().c_str());
+        Serial.printf("[DEBUG] Is stream: %s\n", rtdbResult.isStream() ? "YES" : "NO");
         
+        // Process the stream event
         handleFirebaseStream(aResult);
         return;
     }
@@ -427,5 +409,50 @@ void DecentIoTClass::processData(AsyncResult& aResult) {
     // Handle errors
     if (aResult.isError()) {
         Serial.printf("[DecentIoT] Error: %s\n", aResult.error().message().c_str());
+    }
+    
+    // Handle regular results (not stream events)
+    if (aResult.isResult()) {
+        Serial.printf("[DEBUG] Regular result received - Path: %s\n", aResult.to<RealtimeDatabaseResult>().dataPath().c_str());
+    }
+}
+
+void DecentIoTClass::setupPendingStreams() {
+    static bool streamsSetup = false;
+    
+    // Only set up streams once when app becomes ready
+    if (!streamsSetup && _app.ready()) {
+        Serial.println("[STREAM] App is ready, setting up pending streams...");
+        
+        for (const auto& handler : _receiveHandlers) {
+            String pin = handler.id;
+            String pinPath = String("/") + _projectId + "/users/" + _userId + "/dataStream/" + _deviceId + "/" + pin;
+            
+            Serial.printf("[STREAM] Setting up stream for pin %s at path: %s\n", pin.c_str(), pinPath.c_str());
+            
+            // Create individual stream client for this pin
+            WiFiClientSecure& pinSslClient = _pin_stream_clients[pin];
+            AsyncClientClass& pinAsyncClient = _pin_async_clients[pin];
+            
+            // Configure the pin-specific SSL client
+            pinSslClient.setInsecure();
+            pinSslClient.setBufferSizes(4096, 1024);
+            
+            // Set the client for the async client
+            pinAsyncClient.setClient(pinSslClient);
+            
+            // Set SSE filters for this stream
+            pinAsyncClient.setSSEFilters("get,put,patch,keep-alive,cancel,auth_revoked");
+            
+            // Start the stream for this specific pin using processDataStatic
+            _database.get(pinAsyncClient, pinPath, processDataStatic, true, String("stream_") + pin);
+            
+            Serial.printf("[STREAM] Stream started for pin %s\n", pin.c_str());
+            
+            delay(100); // Small delay between streams
+        }
+        
+        streamsSetup = true;
+        Serial.println("[STREAM] All pending streams have been set up!");
     }
 }

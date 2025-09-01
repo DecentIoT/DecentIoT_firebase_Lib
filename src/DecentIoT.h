@@ -11,6 +11,8 @@
 #define ENABLE_USER_AUTH
 #define ENABLE_DATABASE
 #define FIREBASE_DISABLE_LARGE_STRING_REALLOC_DEBUG
+#define FIREBASE_DISABLE_DEBUG
+#define FIREBASE_DISABLE_ERROR_STRING
 #include <FirebaseClient.h>
 
 // Universal value type for callbacks
@@ -113,6 +115,10 @@ private:
     RealtimeDatabase _database;
     AsyncResult _result;
     
+    // Individual pin stream clients
+    std::map<String, WiFiClientSecure> _pin_stream_clients;
+    std::map<String, AsyncClientClass> _pin_async_clients;
+    
     // Static instance for callbacks
     static DecentIoTClass* _instance;
     
@@ -123,6 +129,7 @@ private:
     static void processDataStatic(AsyncResult& aResult);
     void processData(AsyncResult& aResult);
     static void authDebugPrint(AsyncResult& aResult);
+    void setupPendingStreams();
     
 public:
     DecentIoTClass();
@@ -152,6 +159,11 @@ public:
     // Status
     bool isConnected() const { return _isConnected; }
     bool isStreamActive() const { return _isConnected; } // Stream is active when connected. can be removed later
+    
+    // Public access to instance and processData for callbacks
+    static DecentIoTClass* getInstance() { return _instance; }
+    void processDataPublic(AsyncResult& aResult) { processData(aResult); }
+    
     ~DecentIoTClass();
 };
 
