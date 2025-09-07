@@ -259,3 +259,12 @@ const localTime = new Date(utcTimestamp * 1000).toLocaleString("en-US", {
 - **Web app converts**: Based on user's selected timezone
 
 **Our web app will handle all timezone conversions!** 🎯
+
+full custom planning:
+
+🔥 Key Features We'll Implement
+Firebase REST API calls (GET, PUT, PATCH)
+SSE streaming for real-time data
+Event-driven architecture
+Automatic reconnection
+Clean error handling
