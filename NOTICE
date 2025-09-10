@@ -1,0 +1,22 @@
+DecentIoT Firebase Library
+Copyright 2025 MD Jannatul Nayem
+
+This product includes software developed by third parties:
+
+1. Firebase ESP Client Library
+   Copyright (c) 2021-2024 Mobizt
+   Licensed under the MIT License
+   https://github.com/mobizt/Firebase-ESP-Client
+
+2. ArduinoJson Library
+   Copyright (c) 2014-2021 Benoit Blanchon
+   Licensed under the MIT License
+   https://github.com/bblanchon/ArduinoJson
+
+3. ESP8266/ESP32 WiFi Libraries
+   Copyright (c) 2014-2021 Espressif Systems
+   Licensed under the GNU Lesser General Public License v2.1
+   https://github.com/espressif/arduino-esp32
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file for the full license text.

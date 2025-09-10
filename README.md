@@ -1,172 +1,91 @@
-// this is documnentation of the DecentIoT Library
+# DecentIoT Firebase Library
 
-# DecentIoT Library
+A revolutionary IoT platform that combines a powerful Arduino library with a professional web dashboard. DecentIoT gives you the best of both worlds: **beautiful dashboards like existing platforms** + **complete control with your own Firebase database**.
 
-A simple and powerful library for connecting IoT devices to Firebase Realtime Database. DecentIoT makes it easy to build IoT projects with real-time data synchronization, working seamlessly with the DecentIoT Dashboard.
+## 🚀 What Makes DecentIoT Special?
+
+**DecentIoT** is a **complete IoT platform** that combines:
+- 🌐 **Professional Web Dashboard** - Create beautiful dashboards with widgets
+- 🔧 **Your Own Cloud** - Use your own Firebase Realtime Database
+- 📱 **Smart Arduino Library** - This library that connects everything
+
+**No more vendor lock-in!** Use your own Firebase infrastructure while getting a professional dashboard experience.
 
 ## Features
 
-- 🔥 Easy Firebase Realtime Database integration
-- 📡 Real-time data synchronization
-- 🛠️ Path-based callbacks (matching your dashboard components)
-- 📊 Automatic JSON parsing
-- ⚡ Optimized for ESP32 and ESP8266
-- 🔄 Bi-directional communication with DecentIoT Dashboard
+- 🎯 **Virtual Pin Architecture** - P0, P1, P2, P3... represent virtual pins that map to your web dashboard widgets
+- 🔒 **Your Own Cloud** - Connect to your own Firebase Realtime Database
+- 🌐 **Professional Dashboard** - Create beautiful, interactive dashboards with your own backend
+- ⚡ **Easy to Use** - Simple macros and intuitive API design
+- 🔄 **Real-time Communication** - Bidirectional data flow between device and cloud
+- 🛠️ **Production Ready** - Robust, reliable, and well-tested
+- 💰 **Cost Effective** - No subscription fees, use your own Firebase infrastructure
+- 🔒 **Secure by Default** - Uses Firebase authentication and SSL/TLS for encrypted communication
 
-## Philosophy: User-Managed WiFi, Library-Managed Cloud
+## How It Works
 
-1. Create your project in the DecentIoT Dashboard
-2. Add components (buttons, sliders, gauges, etc.)
-3. Get the generated paths for each component
-4. Use these paths in your IoT code
-5. Everything syncs automatically!
+```
+Physical Device          Virtual Pins          Web Dashboard
+     ↓                       ↓                      ↓
+  D6 (LED)    ←→    P0 (Virtual)    ←→    Button Widget
+  A0 (Sensor) ←→    P1 (Virtual)    ←→    Gauge Widget
+  A1 (Sensor) ←→    P2 (Virtual)    ←→    Chart Widget
+```
+
+1. **Set up your Firebase project** (Google Firebase Console)
+2. **Create DecentIoT web dashboard** with widgets
+3. **Map widgets to virtual pins** (P0, P1, P2, etc.)
+4. **Use this library** to connect your device
+5. **Send/receive data** through virtual pins
 
 ## Installation
 
-1. Download the latest release from GitHub
-2. In Arduino IDE: Sketch -> Include Library -> Add .ZIP Library
-3. Select the downloaded zip file
+### Arduino Library Manager (Recommended)
+1. Open Arduino IDE
+2. Go to **Sketch → Include Library → Manage Libraries**
+3. Search for **"DecentIoT Firebase"**
+4. Click **Install** (dependencies are automatically installed)
 
-DecentIoT leaves WiFi connection and reconnection fully in your control. This gives you maximum flexibility and transparency for your IoT projects. The library only manages the cloud (Firebase) connection.
+### Manual Installation
+1. Download the latest release from GitHub
+2. In Arduino IDE: **Sketch → Include Library → Add .ZIP Library**
+3. Select the downloaded zip file
+4. **Manually install dependencies**:
+   - `Firebase ESP Client` by Mobizt (version 4.0.0 or higher)
+   - `ArduinoJson` by Benoit Blanchon (version 6.0.0 or higher)
+
+## Security Features
+
+🔒 **Firebase Authentication**: Uses Firebase authentication for secure access  
+🔒 **SSL/TLS Support**: All communication encrypted with SSL/TLS  
+🔒 **Your Own Infrastructure**: Data stays on your Firebase project, not third-party platforms  
+🔒 **Production Ready**: Safe for real-world IoT deployments  
+🔒 **No Vendor Lock-in**: Complete control over your data and Firebase infrastructure  
+
+For detailed security information, see [SECURITY.md](SECURITY.md).
 
 ## Quick Start
 
-```cpp
-#include <DecentIoT.h>
-#include <ESP8266WiFi.h> // or <WiFi.h> for ESP32
+1. **Set up your Firebase project** (Google Firebase Console)
+2. **Create DecentIoT web dashboard** with widgets
+3. **Install this library** and connect your device
+4. **Map virtual pins** (P0, P1, P2...) to dashboard widgets
 
-#define FIREBASE_URL "https://your-project.firebasedatabase.app"
-#define FIREBASE_AUTH "your-auth-token"
-#define PROJECT_ID "your-project-id"
-#define DEVICE_ID "your-device-id"
-#define AUTH_EMAIL "your@email.com"
-#define AUTH_PASS "yourpassword"
-#define WIFI_SSID "your-ssid"
-#define WIFI_PASS "your-wifi-password"
+**Ready to get started?** Check out our comprehensive guides:
 
-void setup() {
-    Serial.begin(115200);
-    // User handles WiFi connection
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-    }
-    Serial.println("WiFi connected!");
-    // Now start DecentIoT (cloud connection)
-    DecentIoT.begin(FIREBASE_URL, FIREBASE_AUTH, PROJECT_ID, DEVICE_ID, AUTH_EMAIL, AUTH_PASS);
-}
-
-void loop() {
-    // User checks WiFi and reconnects if needed
-    if (WiFi.status() != WL_CONNECTED) {
-        // User handles reconnection and re-calls DecentIoT.begin() if needed
-    }
-    DecentIoT.run();
-}
-```
-
-## Migration Note
-
-**Migrating from previous versions:**
-If you used to pass WiFi credentials to `DecentIoT.begin()`, you now need to connect WiFi yourself in your `setup()` before calling `DecentIoT.begin()`.
-
-## Component Paths
-
-When you add components in the DecentIoT Dashboard, each component gets a unique path:
-
-| Component Type | Example Path                                           | Description         |
-| -------------- | ------------------------------------------------------ | ------------------- |
-| Toggle Button  | `/project-id/devices/device-id/components/component-id`| Control an LED      |
-| Slider         | `/project-id/devices/device-id/components/component-id`| Control brightness  |
-| Gauge          | `/project-id/devices/device-id/components/component-id`| Display sensor data |
-| Graph          | `/project-id/devices/device-id/components/component-id`| Show data history   |
-
-Use these exact paths in your code to ensure proper communication between your device and dashboard.
-
-## Detailed Usage
-
-### Initialization
-
-```cpp
-// User handles WiFi connection
-WiFi.begin(WIFI_SSID, WIFI_PASS);
-while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-}
-Serial.println("WiFi connected!");
-// Then initialize DecentIoT
-DecentIoT.begin(FIREBASE_URL, FIREBASE_AUTH, PROJECT_ID, DEVICE_ID, AUTH_EMAIL, AUTH_PASS);
-```
-
-### Path Callbacks
-
-```cpp
-// Digital output example
-DECENTIOT_RECEIVE(P0)
-{
-    digitalWrite(LED_PIN, value);
-}
-
-// Analog output example
-DECENTIOT_RECEIVE(P1)
-{
-    analogWrite(LED_PIN, value);
-}
-
-// JSON object example
-DECENTIOT_RECEIVE(P2)
-{
-    int r = value["red"].as<int>();
-    int g = value["green"].as<int>();
-    int b = value["blue"].as<int>();
-    setRGBColor(r, g, b);
-}
-```
-
-### Writing Data
-
-```cpp
-// Write single values
-DecentIoT.write("P1", 25.5);
-DecentIoT.write("P2", true);
-
-// Write strings
-DecentIoT.write("P3", "Hello World");
-```
-
-### Firebase Setup
-
-1. Create a Firebase project at [Firebase Console](https://console.firebase.google.com/)
-2. Enable Realtime Database
-3. Set up security rules for your database
-4. Get your Firebase project credentials:
-   - Database URL
-   - Authentication token
-
-Example security rules for testing:
-
-```json
-{
-  "rules": {
-    ".read": true,
-    ".write": true
-  }
-}
-```
+- 📋 **[Complete Introduction Guide](guide/Introduction.md)** - Everything you need to know
+- ⏰ **[Scheduling System Guide](guide/ScheduleGuidelines.md)** - Advanced features
+- 🔧 **[Code Examples](examples/)** - Ready-to-use examples
 
 ## Examples
 
-The library comes with several examples:
+The library comes with several ready-to-use examples:
 
-1. **Basic LED Control**: Control an LED through Firebase
-2. **Sensor Monitoring**: Upload sensor data to Firebase
-3. **RGB LED Control**: Control RGB LED with JSON data
-4. **Multiple Devices**: Manage multiple devices
-5. **Secure Communication**: Implementation with security best practices
+1. **SimpleLED**: Basic LED control with virtual pins
+2. **SensorExample**: DHT sensor with temperature/humidity  
+3. **DecentTest**: Complete Firebase setup example
 
-Check the `examples` folder for complete code.
+**📁 [View all examples](examples/)** - Copy, paste, and customize for your project
 
 ## Supported Hardware
 
@@ -176,8 +95,12 @@ Check the `examples` folder for complete code.
 
 ## Dependencies
 
-- ArduinoJson (>= 6.0.0)
-- WiFi library for your board
+- `Firebase ESP Client` (>=4.0.0) - Firebase Realtime Database client
+- `ArduinoJson` (>=6.0.0) - JSON data handling
+
+**Installation:**
+- **Arduino Library Manager**: Dependencies are automatically installed ✅
+- **Install from ZIP**: Dependencies are NOT automatically installed ❌
 
 ## Contributing
 
@@ -185,77 +108,34 @@ We welcome contributions! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+## Documentation
+
+- 📋 **[Introduction Guide](guide/Introduction.md)** - Complete getting started guide
+- ⏰ **[Scheduling Guide](guide/ScheduleGuidelines.md)** - Advanced scheduling system
+- 🔧 **Examples** - Ready-to-use code examples
 
 ## Support
 
 - Create an issue on GitHub
-- Join our Discord community
-- Check out our documentation website
+- Check out our documentation guides
+- Join our community discussions
 
 ## Acknowledgments
 
-- Inspired by the simplicity of Blynk
 - Built for the IoT community
-- Special thanks to all contributors
+- Special thanks to the open-source community for the amazing libraries that make this project possible
+
+### Third-Party Libraries
+This library uses the following open-source libraries:
+- **Firebase ESP Client** by Mobizt (MIT License) - Firebase Realtime Database client
+- **ArduinoJson** by Benoit Blanchon (MIT License) - JSON data handling
+- **ESP8266/ESP32 WiFi Libraries** by Espressif (LGPL v2.1) - WiFi connectivity
+
+**Contributors are welcome!** If you'd like to contribute to DecentIoT, please feel free to submit issues, feature requests, or pull requests.
 
 ---
 
-Made with ❤️ by the DecentIoT Team
 
 
-
-
-
-## **Current Implementation about Device Status Time:**
-
-```cpp
-// In DecentIoT.cpp line 63-70
-configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-//                    ^^^^ 0 = UTC offset (no timezone adjustment)
-
-// In updateDeviceStatus()
-time_t unixTimestamp = time(nullptr);
-json.set("t", (unsigned long)unixTimestamp);
-```
-
-## **📊 What's Stored in Firebase Database:**
-
-### **Database Value:**
-```json
-{
-  "s": 1,
-  "t": 1755201555
-}
-```
-
-### **What `t=1755201555` means:**
-- **Type**: Unix timestamp (seconds since January 1, 1970)
-- **Timezone**: **UTC/GMT** (Coordinated Universal Time)
-- **Format**: Raw seconds, no timezone conversion
-
-## **🌍 Timezone Confirmation:**
-
-✅ **Device sends**: **UTC time** (Universal Coordinated Time)  
-✅ **No local timezone**: Device doesn't know user's location  
-✅ **Standard format**: Unix timestamp in UTC  
-
-## **🔧 For Our Web App:**
-
-```javascript
-// Convert UTC timestamp to user's local timezone
-const utcTimestamp = 1755201555; // From Firebase
-const userTimezone = "Asia/Dhaka"; // User selects in webapp
-
-const localTime = new Date(utcTimestamp * 1000).toLocaleString("en-US", {
-    timeZone: userTimezone
-});
-// Result: Local time in user's timezone
-```
-
-## **📝 Summary:**
-- **Database stores**: UTC Unix timestamps
-- **No timezone info**: Pure UTC seconds
-- **Web app converts**: Based on user's selected timezone
-
-**Our web app will handle all timezone conversions!** 🎯

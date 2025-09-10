@@ -1,3 +1,20 @@
+/*
+  DecentIoT Firebase Library
+  Copyright 2025 MD Jannatul Nayem
+  
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+  
+      http://www.apache.org/licenses/LICENSE-2.0
+  
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+*/
+
 #include "DecentIoT.h"
 #include <Firebase_ESP_Client.h>
 #include <addons/TokenHelper.h>
@@ -253,6 +270,13 @@ void DecentIoTClass::cancel(String taskId)
     _scheduledTasks.erase(taskId);
 }
 
+void DecentIoTClass::cancelSend(const char *pin)
+{
+    // Cancel any scheduled send tasks for this pin
+    String taskId = String("send_") + pin;
+    _scheduledTasks.erase(taskId);
+}
+
 void DecentIoTClass::onSend(const char *pin, SendCallback callback)
 {
     _sendHandlers.push_back({pin, callback});
@@ -282,10 +306,6 @@ void DecentIoTClass::onReceive(const char *pin, ReceiveCallback callback)
     }
 }
 
-void DecentIoTClass::cancelSend(const char *pin)
-{
-    // No queue/request system; nothing to cancel. If needed, remove scheduled send tasks here.
-}
 
 void DecentIoTClass::handleFirebaseStream(FirebaseStream data)
 {
@@ -491,12 +511,12 @@ void DecentIoTClass::updateDeviceStatus()
             json.set("t", (unsigned long)unixTimestamp);
 
             if (Firebase.RTDB.setJSON(&_fbdo, statusPath.c_str(), &json)) {
-                Serial.printf("[STATUS] Device status updated successfully: s=1, t=%lu (%s)\n",
+                //Serial.printf("[STATUS] Device status updated successfully: s=1, t=%lu (%s)\n",
                               (unsigned long)unixTimestamp, ctime(&unixTimestamp));
                 _lastStatusUpdate = currentMillis;
                 _statusUpdatePending = false;
             } else {
-                Serial.printf("[STATUS] Failed to update device status. Error: %s\n", _fbdo.errorReason().c_str());
+                //Serial.printf("[STATUS] Failed to update device status. Error: %s\n", _fbdo.errorReason().c_str());
                 _lastStatusRetry = currentMillis;
                 _statusUpdatePending = true;
             }
@@ -512,12 +532,12 @@ void DecentIoTClass::updateDeviceStatus()
         json.set("t", (unsigned long)unixTimestamp);
 
         if (Firebase.RTDB.setJSON(&_fbdo, statusPath.c_str(), &json)) {
-            Serial.printf("[STATUS] Device status updated successfully: s=1, t=%lu (%s)\n",
+            //Serial.printf("[STATUS] Device status updated successfully: s=1, t=%lu (%s)\n",
                           (unsigned long)unixTimestamp, ctime(&unixTimestamp));
             _lastStatusUpdate = currentMillis;
             _statusUpdatePending = false;
         } else {
-            Serial.printf("[STATUS] Failed to update device status. Error: %s\n", _fbdo.errorReason().c_str());
+            //Serial.printf("[STATUS] Failed to update device status. Error: %s\n", _fbdo.errorReason().c_str());
             _lastStatusRetry = currentMillis;
             _statusUpdatePending = true;
         }
