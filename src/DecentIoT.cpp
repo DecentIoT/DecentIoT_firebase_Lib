@@ -150,7 +150,7 @@ void DecentIoTClass::processScheduledTasks()
 
 void DecentIoTClass::write(const char *pin, bool value)
 {
-    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
+    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin + "/value";
     if (Firebase.RTDB.setBool(&_fbdo, path.c_str(), value))
     {
         pollAllReceivePinsOnce();
@@ -160,7 +160,7 @@ void DecentIoTClass::write(const char *pin, bool value)
 
 void DecentIoTClass::write(const char *pin, int value)
 {
-    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
+    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin + "/value";
     if (Firebase.RTDB.setInt(&_fbdo, path.c_str(), value))
     {
         pollAllReceivePinsOnce();
@@ -170,7 +170,7 @@ void DecentIoTClass::write(const char *pin, int value)
 
 void DecentIoTClass::write(const char *pin, float value)
 {
-    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
+    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin + "/value";
     if (Firebase.RTDB.setFloat(&_fbdo, path.c_str(), value))
     {
         pollAllReceivePinsOnce();
@@ -180,7 +180,7 @@ void DecentIoTClass::write(const char *pin, float value)
 
 void DecentIoTClass::write(const char *pin, const char *value)
 {
-    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
+    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin + "/value";
     if (Firebase.RTDB.setString(&_fbdo, path.c_str(), value))
     {
         pollAllReceivePinsOnce();
@@ -191,7 +191,7 @@ void DecentIoTClass::write(const char *pin, const char *value)
 // analog classes
 void DecentIoTClass::writeAnalog(const char *pin, int value)
 {
-    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
+    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin + "/value";
     if (Firebase.RTDB.setInt(&_fbdo, path.c_str(), value))
     {
         Serial.printf("[ANALOG] %s set to %d\n", pin, value);
@@ -207,7 +207,7 @@ void DecentIoTClass::writePWM(const char *pin, int value)
     if (value < 0) value = 0;
     if (value > 255) value = 255;
     
-    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
+    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin + "/value";
     if (Firebase.RTDB.setInt(&_fbdo, path.c_str(), value))
     {
         Serial.printf("[PWM] %s set to %d (0-255)\n", pin, value);
@@ -223,7 +223,7 @@ void DecentIoTClass::writePercent(const char *pin, float value)
     if (value < 0.0) value = 0.0;
     if (value > 100.0) value = 100.0;
     
-    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
+    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin + "/value";
     if (Firebase.RTDB.setFloat(&_fbdo, path.c_str(), value))
     {
         Serial.printf("[PERCENT] %s set to %.1f%%\n", pin, value);
@@ -238,7 +238,7 @@ void DecentIoTClass::writeRange(const char *pin, int value, int min, int max)
     // Map the value from min-max range to 0-255 for PWM
     int mappedValue = map(value, min, max, 0, 255);
     
-    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
+    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin + "/value";
     if (Firebase.RTDB.setInt(&_fbdo, path.c_str(), mappedValue))
     {
         Serial.printf("[RANGE] %s mapped from %d (%d-%d) to %d (0-255)\n", pin, value, min, max, mappedValue);
@@ -288,7 +288,7 @@ void DecentIoTClass::onReceive(const char *pin, ReceiveCallback callback)
     _receiveHandlers.push_back({pin, callback});
     
     // Set up Firebase stream for this pin
-    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin;
+    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin + "/value";
     
     if (Firebase.RTDB.beginStream(&_fbdo, path.c_str()))
     {
@@ -455,7 +455,7 @@ void DecentIoTClass::pollAllReceivePinsOnce()
 {
     for (const auto &handler : _receiveHandlers)
     {
-        String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + handler.id;
+        String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + handler.id + "/value";
         
         // Simple, predictable order - no assumptions about pin names
         // Let the user's code handle the type conversion, not the library
@@ -512,7 +512,7 @@ void DecentIoTClass::updateDeviceStatus()
 
             if (Firebase.RTDB.setJSON(&_fbdo, statusPath.c_str(), &json)) {
                 //Serial.printf("[STATUS] Device status updated successfully: s=1, t=%lu (%s)\n",
-                              (unsigned long)unixTimestamp, ctime(&unixTimestamp));
+                //              (unsigned long)unixTimestamp, ctime(&unixTimestamp));
                 _lastStatusUpdate = currentMillis;
                 _statusUpdatePending = false;
             } else {
@@ -533,7 +533,7 @@ void DecentIoTClass::updateDeviceStatus()
 
         if (Firebase.RTDB.setJSON(&_fbdo, statusPath.c_str(), &json)) {
             //Serial.printf("[STATUS] Device status updated successfully: s=1, t=%lu (%s)\n",
-                          (unsigned long)unixTimestamp, ctime(&unixTimestamp));
+            //              (unsigned long)unixTimestamp, ctime(&unixTimestamp));
             _lastStatusUpdate = currentMillis;
             _statusUpdatePending = false;
         } else {
