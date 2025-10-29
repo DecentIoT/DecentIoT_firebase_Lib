@@ -505,13 +505,10 @@ void DecentIoTClass::updateDeviceStatus()
         // Only retry if enough time has passed since last retry
         if (currentMillis - _lastStatusRetry >= _statusRetryInterval) {
             String statusPath = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/status";
-            FirebaseJson json;
-            json.set("s", 1); // 1 = online, 0 = offline
             time_t unixTimestamp = time(nullptr);
-            json.set("t", (unsigned long)unixTimestamp);
 
-            if (Firebase.RTDB.setJSON(&_fbdo, statusPath.c_str(), &json)) {
-                //Serial.printf("[STATUS] Device status updated successfully: s=1, t=%lu (%s)\n",
+            if (Firebase.RTDB.setInt(&_fbdo, statusPath.c_str(), (unsigned long)unixTimestamp)) {
+                //Serial.printf("[STATUS] Device status updated successfully: %lu (%s)\n",
                 //              (unsigned long)unixTimestamp, ctime(&unixTimestamp));
                 _lastStatusUpdate = currentMillis;
                 _statusUpdatePending = false;
@@ -526,13 +523,10 @@ void DecentIoTClass::updateDeviceStatus()
     // If not pending, check if it's time for a regular update
     else if (currentMillis - _lastStatusUpdate >= _statusUpdateInterval) {
         String statusPath = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/status";
-        FirebaseJson json;
-        json.set("s", 1); // 1 = online, 0 = offline
         time_t unixTimestamp = time(nullptr);
-        json.set("t", (unsigned long)unixTimestamp);
 
-        if (Firebase.RTDB.setJSON(&_fbdo, statusPath.c_str(), &json)) {
-            //Serial.printf("[STATUS] Device status updated successfully: s=1, t=%lu (%s)\n",
+        if (Firebase.RTDB.setInt(&_fbdo, statusPath.c_str(), (unsigned long)unixTimestamp)) {
+            //Serial.printf("[STATUS] Device status updated successfully: %lu (%s)\n",
             //              (unsigned long)unixTimestamp, ctime(&unixTimestamp));
             _lastStatusUpdate = currentMillis;
             _statusUpdatePending = false;
