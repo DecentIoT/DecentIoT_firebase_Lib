@@ -105,6 +105,7 @@ bool DecentIoTClass::begin(const char *firebaseUrl, const char *firebaseAuth,
     }
 
     _isConnected = true;
+    _wasWiFiConnected = true; // Mark WiFi as connected after successful initialization
     
     // Force immediate status update
     _statusUpdatePending = true;
@@ -123,42 +124,74 @@ void DecentIoTClass::run()
         return;
     }
     
-    // 1. Check Firebase connection health
+    unsigned long currentMillis = millis();
+    bool wifiCurrentlyConnected = (WiFi.status() == WL_CONNECTED);
+    
+    // 1. If WiFi is down, can't do anything
+    if (!wifiCurrentlyConnected)
+    {
+        if (_wasWiFiConnected)
+        {
+            Serial.println("[DecentIoT] WiFi disconnected detected");
+            _wasWiFiConnected = false;
+        }
+        return;
+    }
+    
+    // 2. WiFi is connected - check if we need to handle reconnection
+    if (!_wasWiFiConnected)
+    {
+        Serial.println("[DecentIoT] WiFi reconnected, attempting Firebase reconnection...");
+        _wasWiFiConnected = true;
+        _lastReconnectAttempt = 0;
+        
+        delay(2000); // Wait for network stability
+        
+        if (Firebase.ready())
+        {
+            Serial.println("[DecentIoT] Firebase reconnected successfully");
+            if (reconnectStream())
+            {
+                Serial.println("[DecentIoT] Stream reconnected successfully");
+                
+                // Send status FIRST after reconnection (priority!)
+                _statusUpdatePending = true;  // Mark status update as needed
+                _lastStatusRetry = 0;          // Bypass throttling for immediate update
+                updateDeviceStatus();          // Reuse existing status update function
+            }
+        }
+        return;
+    }
+    
+    // 3. Check Firebase connection health
     if (!Firebase.ready())
     {
-        Serial.println("[DecentIoT] Firebase not ready, attempting reconnection...");
+        if (currentMillis - _lastReconnectAttempt >= _reconnectInterval)
+        {
+            Serial.println("[DecentIoT] Firebase not ready, attempting reconnection...");
+        }
         handleReconnection();
         return;
     }
     
-    // 2. Monitor stream health periodically
-    unsigned long currentMillis = millis();
+    // 4. Monitor stream health periodically
     if (currentMillis - _lastStreamCheck >= _streamCheckInterval)
     {
         _lastStreamCheck = currentMillis;
         
         if (!Firebase.RTDB.readStream(&_fbdo))
         {
-            if (_fbdo.streamTimeout())
+            if (_fbdo.streamTimeout() || !_fbdo.httpConnected())
             {
-                Serial.println("[DecentIoT] Stream timeout detected, reconnecting...");
                 if (reconnectStream())
                 {
-                    Serial.println("[DecentIoT] Stream reconnected successfully");
-                }
-            }
-            else if (!_fbdo.httpConnected())
-            {
-                Serial.println("[DecentIoT] Stream disconnected, reconnecting...");
-                if (reconnectStream())
-                {
-                    Serial.println("[DecentIoT] Stream reconnected successfully");
+                    Serial.println("[DecentIoT] Stream reconnected");
                 }
             }
         }
     }
     
-    // 3. Continue normal operations
+    // 5. Continue normal operations
     updateDeviceStatus();
     processScheduledTasks();
 }
@@ -584,27 +617,15 @@ void DecentIoTClass::handleReconnection()
     
     _lastReconnectAttempt = currentMillis;
     
-    Serial.println("[DecentIoT] Attempting to reconnect to Firebase...");
-    
-    // Try to reconnect
+    // Try to reconnect (silent unless it succeeds)
     if (Firebase.ready())
     {
-        Serial.println("[DecentIoT] Firebase reconnected successfully");
+        Serial.println("[DecentIoT] Firebase reconnected");
         
-        // Reconnect the stream
         if (reconnectStream())
         {
-            Serial.println("[DecentIoT] Stream reconnected successfully");
             _isConnected = true;
         }
-        else
-        {
-            Serial.println("[DecentIoT] Failed to reconnect stream");
-        }
-    }
-    else
-    {
-        Serial.printf("[DecentIoT] Reconnection failed. Error: %s\n", _fbdo.errorReason().c_str());
     }
 }
 

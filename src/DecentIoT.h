@@ -125,6 +125,7 @@ private:
     const unsigned long _reconnectInterval = 5000; // 5 seconds between reconnection attempts
     unsigned long _lastStreamCheck = 0;
     const unsigned long _streamCheckInterval = 10000; // Check stream health every 10 seconds
+    bool _wasWiFiConnected = false; // Track WiFi state to detect reconnections
     FirebaseConfig _config;
     FirebaseAuth _auth;
     FirebaseData _fbdo;

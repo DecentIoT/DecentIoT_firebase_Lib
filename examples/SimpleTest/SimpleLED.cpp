@@ -14,7 +14,7 @@
 #define WIFI_PASS "your-wifi-password"
 
 // Pin definitions
-const int ledPin = 2;
+#define ledPin D6
 
 // LED state handler
 DECENTIOT_RECEIVE(P0)
