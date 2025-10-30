@@ -123,10 +123,43 @@ void DecentIoTClass::run()
         return;
     }
     
-    // Always process status updates first
-    updateDeviceStatus();
+    // 1. Check Firebase connection health
+    if (!Firebase.ready())
+    {
+        Serial.println("[DecentIoT] Firebase not ready, attempting reconnection...");
+        handleReconnection();
+        return;
+    }
     
-    // Then process scheduled tasks
+    // 2. Monitor stream health periodically
+    unsigned long currentMillis = millis();
+    if (currentMillis - _lastStreamCheck >= _streamCheckInterval)
+    {
+        _lastStreamCheck = currentMillis;
+        
+        if (!Firebase.RTDB.readStream(&_fbdo))
+        {
+            if (_fbdo.streamTimeout())
+            {
+                Serial.println("[DecentIoT] Stream timeout detected, reconnecting...");
+                if (reconnectStream())
+                {
+                    Serial.println("[DecentIoT] Stream reconnected successfully");
+                }
+            }
+            else if (!_fbdo.httpConnected())
+            {
+                Serial.println("[DecentIoT] Stream disconnected, reconnecting...");
+                if (reconnectStream())
+                {
+                    Serial.println("[DecentIoT] Stream reconnected successfully");
+                }
+            }
+        }
+    }
+    
+    // 3. Continue normal operations
+    updateDeviceStatus();
     processScheduledTasks();
 }
 
@@ -536,6 +569,74 @@ void DecentIoTClass::updateDeviceStatus()
             _statusUpdatePending = true;
         }
         pollAllReceivePinsOnce();
+    }
+}
+
+void DecentIoTClass::handleReconnection()
+{
+    unsigned long currentMillis = millis();
+    
+    // Throttle reconnection attempts
+    if (currentMillis - _lastReconnectAttempt < _reconnectInterval)
+    {
+        return;
+    }
+    
+    _lastReconnectAttempt = currentMillis;
+    
+    Serial.println("[DecentIoT] Attempting to reconnect to Firebase...");
+    
+    // Try to reconnect
+    if (Firebase.ready())
+    {
+        Serial.println("[DecentIoT] Firebase reconnected successfully");
+        
+        // Reconnect the stream
+        if (reconnectStream())
+        {
+            Serial.println("[DecentIoT] Stream reconnected successfully");
+            _isConnected = true;
+        }
+        else
+        {
+            Serial.println("[DecentIoT] Failed to reconnect stream");
+        }
+    }
+    else
+    {
+        Serial.printf("[DecentIoT] Reconnection failed. Error: %s\n", _fbdo.errorReason().c_str());
+    }
+}
+
+bool DecentIoTClass::reconnectStream()
+{
+    // Close existing stream if any
+    Firebase.RTDB.endStream(&_fbdo);
+    
+    // Wait a bit before reconnecting
+    delay(100);
+    
+    // Reconnect the stream
+    String streamPath = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId;
+    
+    if (Firebase.RTDB.beginStream(&_fbdo, streamPath.c_str()))
+    {
+        // Set the stream callback again
+        Firebase.RTDB.setStreamCallback(
+            &_fbdo,
+            handleFirebaseStreamStatic,
+            [](bool timeout)
+            {
+                if (timeout)
+                    Serial.println("[DecentIoT] Stream timeout, resuming...");
+            });
+        
+        return true;
+    }
+    else
+    {
+        Serial.printf("[DecentIoT] Stream reconnection failed. Error: %s\n", _fbdo.errorReason().c_str());
+        return false;
     }
 }
 

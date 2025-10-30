@@ -119,8 +119,12 @@ private:
     unsigned long _lastStatusUpdate = 0;
     const unsigned long _statusUpdateInterval = 30000; // 30 seconds between status updates
     unsigned long _lastStatusRetry = 0;
-    const unsigned long _statusRetryInterval = 15000; // 5 seconds retry interval
+    const unsigned long _statusRetryInterval = 15000; // 15 seconds retry interval
     bool _statusUpdatePending = true; // Force immediate status update
+    unsigned long _lastReconnectAttempt = 0;
+    const unsigned long _reconnectInterval = 5000; // 5 seconds between reconnection attempts
+    unsigned long _lastStreamCheck = 0;
+    const unsigned long _streamCheckInterval = 10000; // Check stream health every 10 seconds
     FirebaseConfig _config;
     FirebaseAuth _auth;
     FirebaseData _fbdo;
@@ -140,6 +144,8 @@ private:
     void debugPrintScheduledTasks();
     void pollAllReceivePinsOnce();
     void updateDeviceStatus();
+    void handleReconnection();
+    bool reconnectStream();
 
 public:
     DecentIoTClass();
