@@ -376,44 +376,70 @@ void DecentIoTClass::onReceive(const char *pin, ReceiveCallback callback)
 void DecentIoTClass::handleFirebaseStream(FirebaseStream data)
 {
     String path = data.dataPath();
-    // Expecting path like "/P0", "/P1", etc. with direct values
-    if (path.startsWith("/P"))
+    // Expecting paths like "/P0", "/P0/value", "/P1", etc.
+    if (!path.startsWith("/P"))
     {
-        // Remove leading slash to get the pin name
-        String pin = path.substring(1);
-        
-        //Serial.printf("[STREAM] Received data for pin %s, type: %s\n", pin.c_str(), data.dataType().c_str());
-        
-        // Handle different data types directly
-        if (data.dataType() == "boolean")
+        return;
+    }
+
+    // Normalize pin id from incoming path:
+    // "/P0" -> "P0", "/P0/value" -> "P0"
+    int secondSlash = path.indexOf('/', 1);
+    String pin = secondSlash == -1 ? path.substring(1) : path.substring(1, secondSlash);
+
+    if (data.dataType() == "boolean")
+    {
+        this->dispatchReceiveHandler(pin.c_str(), data.boolData());
+    }
+    else if (data.dataType() == "int")
+    {
+        this->dispatchReceiveHandler(pin.c_str(), data.intData());
+    }
+    else if (data.dataType() == "float")
+    {
+        this->dispatchReceiveHandler(pin.c_str(), data.floatData());
+    }
+    else if (data.dataType() == "string")
+    {
+        String val = data.stringData();
+        this->dispatchReceiveHandler(pin.c_str(), val.c_str());
+    }
+    else if (data.dataType() == "json")
+    {
+        // Dashboard/Firebase may emit full pin object (e.g. {"value":1,...}) before direct value events.
+        // Parse and dispatch "value" so first switch click is handled immediately.
+        FirebaseJson json;
+        FirebaseJsonData valueData;
+        json.setJsonData(data.jsonString());
+        json.get(valueData, "value");
+
+        if (valueData.success)
         {
-            bool val = data.boolData();
-            //Serial.printf("[STREAM] %s boolean value: %s\n", pin.c_str(), val ? "true" : "false");
-            this->dispatchReceiveHandler(pin.c_str(), val);
-        }
-        else if (data.dataType() == "int")
-        {
-            int val = data.intData();
-            //Serial.printf("[STREAM] %s int value: %d\n", pin.c_str(), val);
-            this->dispatchReceiveHandler(pin.c_str(), val);
-        }
-        else if (data.dataType() == "float")
-        {
-            float val = data.floatData();
-            //Serial.printf("[STREAM] %s float value: %f\n", pin.c_str(), val);
-            this->dispatchReceiveHandler(pin.c_str(), val);
-        }
-        else if (data.dataType() == "string")
-        {
-            String val = data.stringData();
-            //Serial.printf("[STREAM] %s string value: %s\n", pin.c_str(), val.c_str());
-            this->dispatchReceiveHandler(pin.c_str(), val.c_str());
+            if (valueData.type == "boolean")
+            {
+                this->dispatchReceiveHandler(pin.c_str(), valueData.boolValue);
+            }
+            else if (valueData.type == "int")
+            {
+                this->dispatchReceiveHandler(pin.c_str(), valueData.intValue);
+            }
+            else if (valueData.type == "double" || valueData.type == "float")
+            {
+                this->dispatchReceiveHandler(pin.c_str(), static_cast<float>(valueData.doubleValue));
+            }
+            else
+            {
+                this->dispatchReceiveHandler(pin.c_str(), valueData.stringValue.c_str());
+            }
         }
         else
         {
-            Serial.printf("[DEBUG] Unsupported data type %s for pin %s\n", data.dataType().c_str(), pin.c_str());
+            Serial.printf("[DEBUG] JSON payload for pin %s has no 'value' field\n", pin.c_str());
         }
-        return;
+    }
+    else
+    {
+        Serial.printf("[DEBUG] Unsupported data type %s for pin %s\n", data.dataType().c_str(), pin.c_str());
     }
 }
 
