@@ -119,17 +119,24 @@ private:
     std::map<String, WiFiClientSecure> _pin_stream_clients;
     std::map<String, AsyncClientClass> _pin_async_clients;
     
+    // Map stream UIDs to pin names (for identifying which pin triggered callback)
+    static std::map<String, String> _streamUidToPin;
+    
+    // Device-level stream state
+    bool _deviceStreamStarted = false;
+    
     // Static instance for callbacks
     static DecentIoTClass* _instance;
     
     // Private methods
     void processScheduledTasks();
     void updateDeviceStatus();
-    void handleFirebaseStream(AsyncResult& aResult);
+    void handleFirebaseStream(AsyncResult& aResult, const char* pinName = nullptr);
     static void processDataStatic(AsyncResult& aResult);
     void processData(AsyncResult& aResult);
     static void authDebugPrint(AsyncResult& aResult);
     void setupPendingStreams();
+    void startDeviceStream();
     
 public:
     DecentIoTClass();
