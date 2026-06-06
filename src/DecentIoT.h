@@ -27,6 +27,36 @@
 #include <queue>
 #include <Firebase_ESP_Client.h>
 
+// Zero-RAM NMEA GPS Parser
+class DecentIoTGps
+{
+private:
+    char _buffer[83];
+    uint8_t _index = 0;
+    bool _hasFix = false;
+    float _latitude = 0.0f;
+    float _longitude = 0.0f;
+    float _altitude = NAN;
+    float _speed = NAN;
+    String _time = "";
+
+    void parseRMC(char *sentence);
+    bool checkChecksum(const char *sentence);
+    float parseDegree(const char *val, char dir);
+    const char *getField(const char *str, int fieldIndex, char *fieldBuffer, int maxLen);
+
+public:
+    DecentIoTGps();
+    bool encode(char c);
+
+    bool hasFix() const { return _hasFix; }
+    float latitude() const { return _latitude; }
+    float longitude() const { return _longitude; }
+    float altitude() const { return _altitude; }
+    float speed() const { return _speed; } // speed in km/h
+    String time() const { return _time; }   // hhmmss UTC
+};
+
 // Callback types
 // Universal callback that can handle any type
 struct DecentIoTValue {
@@ -150,7 +180,11 @@ private:
 
 public:
     DecentIoTClass();
-    bool begin(const char *firebaseUrl, const char *firebaseAuth, const char *projectId, const char *userId, const char *deviceId, const char *authEmail, const char *authPass);
+    // Add GPS parser instance for compatibility with MQTT examples
+    DecentIoTGps gps;
+    bool begin(const char *firebaseUrl, const char *firebaseAuth,
+                 const char *projectId, const char *userId, const char *deviceId,
+                 const char *authEmail, const char *authPass);
     bool isConnected() { return _isConnected; }
     void onReceive(const char *pin, ReceiveCallback callback);
     void onSend(const char *pin, SendCallback callback);
@@ -165,14 +199,21 @@ public:
     void writePWM(const char *pin, int value);           // PWM control (0-255)
     void writePercent(const char *pin, float value);     // 0-100% range
     void writeRange(const char *pin, int value, int min, int max); // Custom range mapping
+    // Overload to send GPS using internal parser state
+    void writeGPS(const char *pin);
+    void writeGPS(const char *pin, float lat, float lon);
+    void writeGPS(const char *pin, String lat, String lon);
+    void feedGPS(const char *pin, float lat, float lon, float alt, uint8_t sats);
+    // Overload for character‑wise GPS feeding (compatible with MQTT example)
+    void feedGPS(char c);
 
     void schedule(uint32_t interval, TaskCallback callback);
     void schedule(String taskId, uint32_t interval, TaskCallback callback);
     void scheduleOnce(uint32_t delay, TaskCallback callback);
 };
 
-extern DecentIoTClass DecentIoT;
 DecentIoTClass &getDecentIoT();
+#define DecentIoT getDecentIoT()
 
 // Helper class to register receive handlers at static initialization time
 class DecentIoTReceiveRegistrar
@@ -204,17 +245,43 @@ public:
     }
 };
 
+// GPS Registrar helper class
+class DecentIoTGpsRegistrar
+{
+public:
+    DecentIoTGpsRegistrar(const char *pin, TaskCallback cb, uint32_t interval = 0)
+    {
+        if (interval > 0)
+        {
+            // Schedule GPS data sending
+            String taskId = String("gps_") + pin;
+            getDecentIoT().schedule(taskId, interval, cb);
+        }
+        else
+        {
+            // Register callback (manual GPS sending)
+            getDecentIoT().onSend(pin, cb);
+        }
+    }
+};
+
 // Macro for user-friendly receive handler definition
 #define DECENTIOT_RECEIVE(PIN_NAME)                                                                                        \
     void DECENTIOT_RECEIVE_HANDLER_##PIN_NAME(const DecentIoTValue& value);                                    \
     static DecentIoTReceiveRegistrar _decentiot_receive_registrar_##PIN_NAME(#PIN_NAME, DECENTIOT_RECEIVE_HANDLER_##PIN_NAME); \
     void DECENTIOT_RECEIVE_HANDLER_##PIN_NAME(const DecentIoTValue& value)
 
-// Macro for user-friendly send handler definition with optional interval
-#define DECENTIOT_SEND(PIN_NAME, ...)                                                                                            \
-    void DECENTIOT_SEND_HANDLER_##PIN_NAME();                                                                                    \
-    static DecentIoTSendRegistrar _decentiot_send_registrar_##PIN_NAME(#PIN_NAME, DECENTIOT_SEND_HANDLER_##PIN_NAME, ##__VA_ARGS__); \
-    void DECENTIOT_SEND_HANDLER_##PIN_NAME()
+    // Macro for user-friendly send handler definition with optional interval
+    #define DECENTIOT_SEND(PIN_NAME, ...)                                                                                            \
+        void DECENTIOT_SEND_HANDLER_##PIN_NAME();                                                                                    \
+        static DecentIoTSendRegistrar _decentiot_send_registrar_##PIN_NAME(#PIN_NAME, DECENTIOT_SEND_HANDLER_##PIN_NAME, ##__VA_ARGS__); \
+        void DECENTIOT_SEND_HANDLER_##PIN_NAME()
+
+    // GPS Macro for sending GPS data with optional interval
+    #define DECENTIOT_SEND_GPS(PIN_NAME, INTERVAL)                                                                                 \
+        void DECENTIOT_SEND_GPS_HANDLER_##PIN_NAME();                                                                             \
+        static DecentIoTGpsRegistrar _decentiot_gps_registrar_##PIN_NAME(#PIN_NAME, DECENTIOT_SEND_GPS_HANDLER_##PIN_NAME, INTERVAL); \
+        void DECENTIOT_SEND_GPS_HANDLER_##PIN_NAME()
 
 // Pin definitions
 #define P0 "P0"

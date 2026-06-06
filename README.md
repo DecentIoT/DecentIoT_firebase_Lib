@@ -96,7 +96,7 @@ The library comes with several ready-to-use examples:
 ## Dependencies
 
 - `Firebase ESP Client` (>=4.0.0) - Firebase Realtime Database client
-- `ArduinoJson` (>=6.0.0) - JSON data handling
+
 
 **Installation:**
 - **Arduino Library Manager**: Dependencies are automatically installed ✅

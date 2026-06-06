@@ -21,9 +21,10 @@
 #include <addons/RTDBHelper.h>
 #include <time.h>
 
-// Global instance
-DecentIoTClass DecentIoT;
-DecentIoTClass &getDecentIoT() { return DecentIoT; }
+DecentIoTClass &getDecentIoT() {
+    static DecentIoTClass instance;
+    return instance;
+}
 
 // Static instance pointer for callback
 DecentIoTClass *DecentIoTClass::_instance = nullptr;
@@ -63,6 +64,7 @@ bool DecentIoTClass::begin(const char *firebaseUrl, const char *firebaseAuth,
 
     Firebase.begin(&_config, &_auth);
     Firebase.reconnectWiFi(true);
+    Serial.println("[WiFi] connected successfully!");
 
     if (!Firebase.ready())
     {
@@ -112,7 +114,7 @@ bool DecentIoTClass::begin(const char *firebaseUrl, const char *firebaseAuth,
     _lastStatusUpdate = 0;
     _lastStatusRetry = 0;
     
-    Serial.println("DecentIoT Initialized Successfully!");
+    Serial.println("✅ Firebase Initialized Successfully!");
     return true;
 }
 
@@ -312,6 +314,82 @@ void DecentIoTClass::writeRange(const char *pin, int value, int min, int max)
         return;
     }
     Serial.printf("[RANGE] Failed to set %s\n", pin);
+}
+void DecentIoTClass::writeGPS(const char *pin, float lat, float lon)
+{
+    // Altitude and speed not provided; use empty fields
+    feedGPS(pin, lat, lon, NAN, 0);
+}
+
+void DecentIoTClass::writeGPS(const char *pin, String lat, String lon)
+{
+    float latF = lat.toFloat();
+    float lonF = lon.toFloat();
+    feedGPS(pin, latF, lonF, NAN, 0);
+}
+
+void DecentIoTClass::feedGPS(const char *pin, float lat, float lon, float alt, uint8_t sats)
+{
+    // Build pipe-delimited payload: lat|lon|alt|speed|time
+    time_t now = time(nullptr);
+    struct tm *timeinfo = gmtime(&now);
+    char timeBuf[7];
+    if (timeinfo)
+    {
+        sprintf(timeBuf, "%02d%02d%02d", timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+    }
+    else
+    {
+        strcpy(timeBuf, "000000");
+    }
+
+    String payload = String(lat, 6) + "|" + String(lon, 6) + "|" + 
+                     (isnan(alt) ? "" : String(alt, 1)) + "|" + 
+                     "" + "|" + timeBuf;
+
+    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin + "/value";
+    if (Firebase.RTDB.setString(&_fbdo, path.c_str(), payload.c_str()))
+    {
+        Serial.printf("[GPS] Sent payload: %s\n", payload.c_str());
+    }
+    else
+    {
+        Serial.println("[GPS] Failed to send payload");
+    }
+}
+
+// Overload to send GPS using internal parser state
+void DecentIoTClass::writeGPS(const char *pin)
+{
+    if (!gps.hasFix())
+    {
+        Serial.println("⚠️  No GPS fix, skipping GPS message");
+        return;
+    }
+
+    String timeStr = gps.time();
+    String payload = String(gps.latitude(), 6) + "|" +
+                     String(gps.longitude(), 6) + "|" +
+                     (isnan(gps.altitude()) ? "" : String(gps.altitude(), 1)) + "|" +
+                     (isnan(gps.speed()) ? "" : String(gps.speed(), 2)) + "|" +
+                     timeStr;
+
+    String path = String("/") + _projectId + "/users/" + _userId + "/datastreams/" + _deviceId + "/" + pin + "/value";
+    if (Firebase.RTDB.setString(&_fbdo, path.c_str(), payload.c_str()))
+    {
+        Serial.printf("[GPS] Sent native location: %s\n", payload.c_str());
+    }
+    else
+    {
+        Serial.printf("[GPS] Failed to send native location. Error: %s\n", _fbdo.errorReason().c_str());
+    }
+}
+
+// Character‑wise GPS feeding compatible with MQTT example
+void DecentIoTClass::feedGPS(char c)
+{
+    // Feed character to internal GPS parser; ignore return value for now
+    gps.encode(c);
 }
 
 void DecentIoTClass::schedule(uint32_t interval, TaskCallback callback)
@@ -687,3 +765,169 @@ bool DecentIoTClass::reconnectStream()
     }
 }
 
+// ====================================================================
+// DecentIoTGps: Zero-RAM NMEA GPS Parser Implementation
+// ====================================================================
+
+DecentIoTGps::DecentIoTGps() : _index(0), _hasFix(false), _latitude(0.0f), _longitude(0.0f), _altitude(NAN), _speed(NAN), _time("") {}
+
+bool DecentIoTGps::encode(char c)
+{
+    if (c == '$')
+    {
+        _index = 0;
+        _buffer[_index++] = c;
+        return false;
+    }
+    
+    if (_index == 0)
+    {
+        return false; // Waiting for start character '$'
+    }
+    
+    if (c == '\r' || c == '\n')
+    {
+        if (_index > 0)
+        {
+            _buffer[_index] = '\0';
+            _index = 0;
+            // Check if sentence matches $--RMC
+            if (strlen(_buffer) > 6 && _buffer[3] == 'R' && _buffer[4] == 'M' && _buffer[5] == 'C')
+            {
+                if (checkChecksum(_buffer))
+                {
+                    parseRMC(_buffer);
+                    return true;
+                }
+            }
+        }
+        _index = 0;
+        return false;
+    }
+    
+    if (_index < sizeof(_buffer) - 1)
+    {
+        _buffer[_index++] = c;
+    }
+    else
+    {
+        _index = 0; // Overflow, reset
+    }
+    return false;
+}
+
+bool DecentIoTGps::checkChecksum(const char *sentence)
+{
+    const char *star = strchr(sentence, '*');
+    if (!star)
+    {
+        return true; // Lenient if no checksum field
+    }
+    
+    uint8_t calculated = 0;
+    for (const char *p = sentence + 1; p < star; ++p)
+    {
+        calculated ^= *p;
+    }
+    
+    char hex[3];
+    hex[0] = star[1];
+    hex[1] = star[2];
+    hex[2] = '\0';
+    uint8_t received = (uint8_t)strtol(hex, nullptr, 16);
+    
+    return calculated == received;
+}
+
+const char *DecentIoTGps::getField(const char *str, int fieldIndex, char *fieldBuffer, int maxLen)
+{
+    int currentField = 0;
+    const char *p = str;
+    
+    while (*p && currentField < fieldIndex)
+    {
+        if (*p == ',')
+        {
+            currentField++;
+        }
+        p++;
+    }
+    
+    if (currentField != fieldIndex)
+    {
+        fieldBuffer[0] = '\0';
+        return nullptr;
+    }
+    
+    int i = 0;
+    while (*p && *p != ',' && *p != '*' && i < maxLen - 1)
+    {
+        fieldBuffer[i++] = *p++;
+    }
+    fieldBuffer[i] = '\0';
+    return fieldBuffer;
+}
+
+float DecentIoTGps::parseDegree(const char *val, char dir)
+{
+    float raw = atof(val);
+    int degrees = (int)(raw / 100);
+    float minutes = raw - (degrees * 100);
+    float decimal = degrees + (minutes / 60.0f);
+    
+    if (dir == 'S' || dir == 'W')
+    {
+        decimal = -decimal;
+    }
+    return decimal;
+}
+
+void DecentIoTGps::parseRMC(char *sentence)
+{
+    char field[32];
+    
+    // Field 2: Status (A = Active/Valid, V = Warning/Invalid)
+    if (!getField(sentence, 2, field, sizeof(field)) || field[0] != 'A')
+    {
+        _hasFix = false;
+        return;
+    }
+    
+    // Field 1: UTC Time (hhmmss.sss)
+    if (getField(sentence, 1, field, sizeof(field)) && strlen(field) >= 6)
+    {
+        char timeStr[7];
+        strncpy(timeStr, field, 6);
+        timeStr[6] = '\0';
+        _time = String(timeStr);
+    }
+    
+    // Field 3 & 4: Latitude
+    if (getField(sentence, 3, field, sizeof(field)))
+    {
+        char dirField[2];
+        if (getField(sentence, 4, dirField, sizeof(dirField)))
+        {
+            _latitude = parseDegree(field, dirField[0]);
+        }
+    }
+    
+    // Field 5 & 6: Longitude
+    if (getField(sentence, 5, field, sizeof(field)))
+    {
+        char dirField[2];
+        if (getField(sentence, 6, dirField, sizeof(dirField)))
+        {
+            _longitude = parseDegree(field, dirField[0]);
+        }
+    }
+    
+    // Field 7: Speed over ground (knots)
+    if (getField(sentence, 7, field, sizeof(field)))
+    {
+        float knots = atof(field);
+        _speed = knots * 1.852f; // Convert to km/h
+    }
+    
+    _hasFix = true;
+}
